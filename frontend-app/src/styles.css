@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Noto Sans SC, sans-serif; color: #0f172a; background: #f8fafc; }
+.app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; max-width: 900px; margin: 0 auto; }
+.header { padding: 16px; font-weight: 600; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+.messages { padding: 16px; overflow-y: auto; }
+.message { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; margin: 10px 0; line-height: 1.6; white-space: pre-wrap; }
+.message.user { background: #e0f2fe; border-color: #bae6fd; }
+.message.assistant { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+.thought { border: 1px solid #dc2626; background: #fef2f2; border-radius: 10px; margin: 10px 0; }
+.thought-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; }
+.badge { font-size: 12px; color: #ffffff; background: #dc2626; padding: 2px 8px; border-radius: 999px; }
+.thought-body { padding: 8px 10px; color: #991b1b; white-space: pre-wrap; }
+.thought.collapsed .thought-body { display: none; }
+.toggle { background: transparent; color: #dc2626; border: none; padding: 4px 8px; cursor: pointer; }
+.composer { display: grid; grid-template-columns: 1fr 220px auto; gap: 8px; padding: 12px; border-top: 1px solid #e2e8f0; background: #ffffff; }
+.composer input { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; }
+.composer button { background: #0ea5e9; color: white; border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
+.composer button:disabled { background: #94a3b8; cursor: not-allowed; }

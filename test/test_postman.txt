@@ -1,0 +1,3 @@
+Postman 是一款流行的 API 开发与测试工具，支持构造和发送 HTTP 请求（如 GET、POST），并查看响应结果。它提供可视化的请求构造界面，支持 JSON、XML 等数据格式。
+
+主要功能包括 API 调试、自动化测试脚本、Mock 服务、API 文档生成、团队协作与版本管理。Postman 适用于 RESTful API 和 GraphQL 接口的开发与测试。

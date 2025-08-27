@@ -1,0 +1,12 @@
+{
+  "software": "Notion",
+  "features": [
+    "全能笔记与知识库管理",
+    "支持 Markdown 与表格",
+    "任务看板与日历视图",
+    "数据库与关系型数据",
+    "团队协作与权限管理"
+  ],
+  "platform": ["Web", "macOS", "Windows", "iOS", "Android"],
+  "use_case": "个人知识管理、团队协作、项目文档"
+}

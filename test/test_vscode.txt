@@ -1,0 +1,5 @@
+Visual Studio Code (VS Code) 是由 Microsoft 开发的免费开源代码编辑器，支持 Windows、macOS 和 Linux。它内置了对 JavaScript、TypeScript 和 Node.js 的支持，并拥有丰富的扩展生态系统，可通过 VS Code Marketplace 安装插件，如 Python、Docker、GitLens 等。
+
+核心功能包括代码高亮、智能补全、语法检查、Git 集成、内置终端、调试支持等。VS Code 还支持远程开发，允许开发者通过 SSH、容器或 WSL 直接在远程环境中编码。
+
+最新版本为 v1.85，提供更快的启动速度、改进的 AI 辅助编程（如 GitHub Copilot 集成）、以及增强的 UI 自定义选项。

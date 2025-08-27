@@ -1,0 +1,10 @@
+
+Docker 是一个开源的容器化平台，用于将应用程序及其依赖打包到轻量级容器中，实现快速部署与跨环境一致性。Docker 使用镜像机制来构建应用环境，支持通过 Dockerfile 定义镜像内容。 主要功能包括容器运行、镜像管理、网络配置、数据卷挂载、Docker Compose 多容器编排等。适用于开发、测试、生产环境中的微服务与 DevOps 实践。
+Postman 是一款流行的 API 开发与测试工具，支持构造和发送 HTTP 请求（如 GET、POST），并查看响应结果。它提供可视化的请求构造界面，支持 JSON、XML 等数据格式。 主要功能包括 API 调试、自动化测试脚本、Mock 服务、API 文档生成、团队协作与版本管理。Postman 适用于 RESTful API 和 GraphQL 接口的开发与测试。
+Figma 是⼀款基于云端的界⾯设计⼯具，主要⽤于 UI/UX 设计和原型制作。它⽀持实时多⼈协作，设计团队成员可以同时在线编辑同⼀份设计稿，并实时查看更改。主要功能包括⽮量绘图、设计组件管理、交互原型制作、设计系统维护等。Figma 还提供开发模式，⾃动⽣成 CSS、Swift、Android XML 等代码标注，⽅便开发者实现设计。Figma 是 SaaS 服务，⽆需安装，通过浏览器即可使⽤，同时提供 macOS 和 Windows 桌⾯应⽤。适⽤于从设计稿到开发交付的完整流程。
+{"software": "Notion", "features": ["全能笔记与知识库管理", "支持 Markdown 与表格", "任务看板与日历视图", "数据库与关系型数据", "团队协作与权限管理"], "platform": ["Web", "macOS", "Windows", "iOS", "Android"], "use_case": "个人知识管理、团队协作、项目文档"}
+Docker 是一个开源的容器化平台，用于将应用程序及其依赖打包到轻量级容器中，实现快速部署与跨环境一致性。Docker 使用镜像机制来构建应用环境，支持通过 Dockerfile 定义镜像内容。 主要功能包括容器运行、镜像管理、网络配置、数据卷挂载、Docker Compose 多容器编排等。适用于开发、测试、生产环境中的微服务与 DevOps 实践。
+Visual Studio Code (VS Code) 是由 Microsoft 开发的免费开源代码编辑器，支持 Windows、macOS 和 Linux。它内置了对 JavaScript、TypeScript 和 Node.js 的支持，并拥有丰富的扩展生态系统，可通过 VS Code Marketplace 安装插件，如 Python、Docker、GitLens 等。
+核心功能包括代码高亮、智能补全、语法检查、Git 集成、内置终端、调试支持等。VS Code 还支持远程开发，允许开发者通过 SSH、容器或 WSL 直接在远程环境中编码。
+最新版本为 v1.85，提供更快的启动速度、改进的 AI 辅助编程（如 GitHub Copilot 集成）、以及增强的 UI 自定义选项。
+Figma 是⼀款基于云端的界⾯设计⼯具，主要⽤于 UI/UX 设计和原型制作。它⽀持实时多⼈协作，设计团队成员可以同时在线编辑同⼀份设计稿，并实时查看更改。主要功能包括⽮量绘图、设计组件管理、交互原型制作、设计系统维护等。Figma 还提供开发模式，⾃动⽣成 CSS、Swift、Android XML 等代码标注，⽅便开发者实现设计。Figma 是 SaaS 服务，⽆需安装，通过浏览器即可使⽤，同时提供 macOS 和 Windows 桌⾯应⽤。适⽤于从设计稿到开发交付的完整流程。

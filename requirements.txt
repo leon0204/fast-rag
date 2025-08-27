@@ -1,0 +1,11 @@
+openai
+torch
+PyPDF2
+ollama
+pyyaml
+beautifulsoup4
+lxml
+python-dotenv
+fastapi
+uvicorn
+python-multipart
