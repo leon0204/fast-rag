@@ -56,16 +56,45 @@ async def chat_stream(query: str = Form(...), session_id: Optional[str] = Form(N
                     f"开始返回 ts={datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
                     f"latency={(first_chunk_ts - enter_ts)*1000:.0f}ms"
                 )
+            
+            # 检查chunk状态
             is_empty = (len(chunk) == 0)
-            is_newline = (chunk == "\n" or chunk == "\r\n")
-            if is_empty or is_newline:
-                print(f"chunk_info  {chunk} , empty={is_empty} newline_only={is_newline} repr={chunk!r}")
-            else:
-                print(f"chunk_info {chunk} ,  empty=False newline_only=False len={len(chunk)}")
-            # do not send completely empty chunks
-            if is_empty:
-                continue
-            yield f"data: {chunk}\n\n"
+            is_pure_newline = (chunk == "\n" or chunk == "\r\n")
+            contains_newline = "\n" in chunk or "\r" in chunk
+            
+            # 打印调试信息
+            # if is_empty:
+            #     print(f"chunk_info: 空chunk, empty=True, repr={chunk!r}")
+            # elif is_pure_newline:
+            #     print(f"chunk_info: 纯换行, empty=False, newline_only=True, repr={chunk!r}")
+            # elif contains_newline:
+            #     print(f"chunk_info: 包含换行符, empty=False, newline_only=False, len={len(chunk)}, repr={chunk!r}")
+            #     # 详细分析包含换行符的chunk
+            #     newline_positions = []
+            #     for i, char in enumerate(chunk):
+            #         if char in ['\n', '\r']:
+            #             newline_positions.append(f"pos{i}:{repr(char)}")
+            #     print(f"  -> 换行符位置: {newline_positions}")
+                
+            # else:
+            #     print(f"chunk_info: 正常内容, empty=False, newline_only=False, len={len(chunk)}, content={chunk}")
+            
+            # 跳过完全空的chunk，但保留包含换行符的chunk
+            # if is_empty:
+            #     continue
+            
+            # 处理换行符：将换行符替换为特殊字符
+            processed_chunk = chunk
+            if contains_newline:
+                # 将换行符替换为特殊字符 [NEWLINE]
+                processed_chunk = chunk.replace('\n', '[NEWLINE]').replace('\r', '[NEWLINE]')
+                # print(f"处理换行符后的chunk: {repr(processed_chunk)}")
+            
+            # 发送chunk给前端
+            sse_data = f"data: {processed_chunk}\n\n"
+            # print(f"发送SSE数据: {repr(sse_data)}")
+            yield sse_data
+            
         yield "data: [DONE]\n\n"
         print(f"流式响应完成，最终会话历史长度: {len(app_state.histories[sid])}")
 

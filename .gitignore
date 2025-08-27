@@ -1,2 +1,20 @@
+# macOS
 .DS_Store
 
+# Python
+*.py[cod]
+*$py.class
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# 其它
+*.log
+*.tmp

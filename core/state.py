@@ -11,7 +11,7 @@ from openai import OpenAI
 
 VAULT_PATH = os.environ.get("VAULT_PATH", "vault.txt")
 # DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:latest")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:latest")  # 使用更小的模型
 
 
 def read_vault_lines(vault_path: str) -> List[str]:
@@ -40,14 +40,37 @@ def embed_texts(texts: List[str]) -> torch.Tensor:
 
 
 def get_relevant_context(rewritten_input: str, vault_embeddings: torch.Tensor, vault_content: List[str], top_k: int = 3) -> List[str]:
+    import time
+    
     if vault_embeddings is None or vault_embeddings.nelement() == 0:
         print("vault_embeddings 为空，跳过检索")
         return []
+    
     print(f"开始检索相关上下文，vault_content 长度: {len(vault_content)}")
-    input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)["embedding"]
+    
+    # 测量向量嵌入生成时间
+    embedding_start = time.time()
+    
+    # 检查缓存
+    if rewritten_input in app_state.query_embedding_cache:
+        input_embedding = app_state.query_embedding_cache[rewritten_input]
+        print(f"📊 使用缓存的向量嵌入")
+    else:
+        input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)["embedding"]
+        app_state.query_embedding_cache[rewritten_input] = input_embedding
+        print(f"📊 生成新的向量嵌入并缓存")
+    
+    embedding_time = time.time() - embedding_start
+    print(f"📊 向量嵌入处理耗时: {embedding_time:.2f}秒")
+    
+    # 测量相似度计算时间
+    similarity_start = time.time()
     cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
     top_k = min(top_k, len(cos_scores))
     top_indices = torch.topk(cos_scores, k=top_k)[1].tolist()
+    similarity_time = time.time() - similarity_start
+    print(f"🔍 相似度计算耗时: {similarity_time:.2f}秒")
+    
     result = [vault_content[idx].strip() for idx in top_indices]
     print(f"检索完成，找到 {len(result)} 个相关片段")
     return result
@@ -154,64 +177,75 @@ def rewrite_query_stream(user_input: str, conversation_history: List[Dict[str, s
 def rag_chat_stream(user_input: str, system_message: str, conversation_history: List[Dict[str, str]],
                     vault_embeddings: torch.Tensor, vault_content: List[str], client: OpenAI, model: str) -> Iterator[str]:
     """Yield assistant content chunks as they stream in, and update history when done."""
+    import time
+    start_time = time.time()
+    
     conversation_history.append({"role": "user", "content": user_input})
 
     # 如果是多轮对话，先流式重写查询
-    if len(conversation_history) > 1:
-        print("多轮对话，开始流式重写查询...")
-        yield "<think>正在根据对话历史重写查询以更好地检索相关信息...</think>"
-
-        """流式版本的查询重写函数"""
-        context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-2:]])
-        prompt = f"""请根据以下对话历史，重新组织并改写下面的用户查询。
-                改写后的查询应该：
-
-                - 保留原查询的核心意图和含义
-                - 让查询更清晰、更具体，便于检索相关上下文信息
-                - 不要引入与原查询无关的新话题
-                - 请只专注于重新组织语言，不要尝试回答原查询的问题
-
-                请严格按照要求，仅返回改写后的查询文本，不要任何额外解释或格式。
-
-                对话历史：
-                {context}
-
-                原始查询：[{user_input}]
-
-                改写后的查询：
-                """
-        print(f"开始调用 rewrite_query_stream，历史长度: {len(conversation_history)}")
-
-        stream = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": prompt}],
-            max_tokens=2000,
-            stream=True,
-        )
-
-        collected = []
-        for event in stream:
-            delta = getattr(event.choices[0].delta, 'content', None)
-            if delta:
-                collected.append(delta)
-                yield delta
-
-        rewritten_query = "".join(collected).strip()
-        print(f"查询重写完成: {rewritten_query}")
-    else:
-        rewritten_query = user_input
-
+    # if len(conversation_history) > 1:
+    #     print("多轮对话，开始流式重写查询...")
+    #     yield "<think>正在根据对话历史重写查询以更好地检索相关信息...</think>"
+    #
+    #     """流式版本的查询重写函数"""
+    #     context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-2:]])
+    #     prompt = f"""请根据以下对话历史，重新组织并改写下面的用户查询。
+    #             改写后的查询应该：
+    #
+    #             - 保留原查询的核心意图和含义
+    #             - 让查询更清晰、更具体，便于检索相关上下文信息
+    #             - 不要引入与原查询无关的新话题
+    #             - 请只专注于重新组织语言，不要尝试回答原查询的问题
+    #
+    #             请严格按照要求，仅返回改写后的查询文本，不要任何额外解释或格式。
+    #
+    #             对话历史：
+    #             {context}
+    #
+    #             原始查询：[{user_input}]
+    #
+    #             改写后的查询：
+    #             """
+    #     print(f"开始调用 rewrite_query_stream，历史长度: {len(conversation_history)}")
+    #
+    #     if app_state.model_loaded:
+    #         print(f"🔄 查询重写使用预加载模型")
+    #     else:
+    #         print(f"🔄 查询重写首次加载模型")
+    #
+    #     stream = client.chat.completions.create(
+    #         model=model,
+    #         messages=[{"role": "system", "content": prompt}],
+    #         max_tokens=2000,
+    #         stream=True,
+    #     )
+    #
+    #     collected = []
+    #     for event in stream:
+    #         delta = getattr(event.choices[0].delta, 'content', None)
+    #         if delta:
+    #             collected.append(delta)
+    #             yield delta
+    #
+    #     rewritten_query = "".join(collected).strip()
+    #     print(f"查询重写完成: {rewritten_query}")
+    # else:
+    #     rewritten_query = user_input
+    rewritten_query = user_input
     # 检索相关上下文
     yield "<think>正在检索相关上下文信息...</think>"
+    retrieval_start = time.time()
     relevant_context = get_relevant_context(rewritten_query, vault_embeddings, vault_content)
+    retrieval_time = time.time() - retrieval_start
+    print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
     context_str = "\n".join(relevant_context) if relevant_context else ""
     
     if context_str:
         yield f"<think>找到 {len(relevant_context)} 个相关文档片段</think>"
+        user_input_with_context = user_input + "\n\nRelevant Context:\n" + context_str
     else:
-        yield "<think>未找到相关上下文信息</think>"
-
-    user_input_with_context = user_input if not context_str else user_input + "\n\nRelevant Context:\n" + context_str
+        yield "<think>未找到相关上下文信息，将直接回答</think>"
+        user_input_with_context = user_input
     conversation_history[-1]["content"] = user_input_with_context
 
     messages = [
@@ -220,14 +254,23 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
     ]
 
     # 开始生成回答
-    yield "<think>正在生成组织之后的回答...</think>"
+    yield "<think>正在生成AI分析回答...</think>"
     
+    generation_start = time.time()
+    if app_state.model_loaded:
+        print(f"🚀 开始调用模型生成... (模型已预加载)")
+    else:
+        print(f"🚀 开始调用模型生成... (首次加载)")
     stream = client.chat.completions.create(
         model=model,
         messages=messages,
         max_tokens=2000,
         stream=True,
     )
+
+
+    generation_time = time.time() - generation_start
+    print(f"🤖 模型生成耗时: {generation_time:.2f}秒")
 
     collected = []
     for event in stream:
@@ -237,6 +280,8 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
             yield delta
     final_answer = "".join(collected)
     conversation_history.append({"role": "assistant", "content": final_answer})
+    total_time = time.time() - start_time
+    print(f"🎯 总耗时: {total_time:.2f}秒")
 
 
 class AppState:
@@ -244,13 +289,15 @@ class AppState:
         self.vault_content: List[str] = []
         self.vault_embeddings: torch.Tensor = torch.empty((0,))
         self.histories: Dict[str, List[Dict[str, str]]] = {}
+        self.query_embedding_cache: Dict[str, List[float]] = {}  # 缓存查询向量嵌入
+        self.model_loaded: bool = False  # 标记模型是否已加载
         self.system_message: str = (
             "你是一个智能助手，擅长从给定文本中提取最有用的信息，并结合上下文回答用户问题。\n"
             "请始终使用中文回答用户的问题，语言要清晰、简洁、专业。\n"
             "如果用户的问题是中文，你的回答也必须是中文。\n"
             "如果用户的问题中包含中英文混合，你仍然优先用中文回答。"
         )
-        self.client: OpenAI = OpenAI(base_url='http://localhost:11434/v1', api_key='deepseek-r1:7b')
+        self.client: OpenAI = OpenAI(base_url='http://localhost:11434/v1', api_key='llama3')
 
 
 app_state = AppState()
@@ -261,19 +308,27 @@ def initialize_state_on_startup() -> None:
     print("🚀 正在启动 RAG 服务...")
     print("=" * 50)
     
-    # 检查模型服务
-    print("\n📋 检查模型服务状态...")
+    # 预加载模型
+    print("\n🔥 预加载模型...")
     try:
-        # 测试模型连接
+        import time
+        warmup_start = time.time()
+        
+        # 发送一个简单的请求来预加载模型
         test_response = app_state.client.chat.completions.create(
             model=DEFAULT_MODEL,
-            messages=[{"role": "user", "content": "test"}],
+            messages=[{"role": "user", "content": "你好"}],
             max_tokens=10,
         )
-        print(f"✅ 模型服务连接成功 - 模型: {DEFAULT_MODEL}")
+        
+        warmup_time = time.time() - warmup_start
+        print(f"✅ 模型预加载完成，耗时: {warmup_time:.2f}秒")
+        print(f"   模型: {DEFAULT_MODEL}")
         print(f"   模型响应测试: {test_response.choices[0].message.content}")
+        app_state.model_loaded = True
+        
     except Exception as e:
-        print(f"❌ 模型服务连接失败: {str(e)}")
+        print(f"❌ 模型预加载失败: {str(e)}")
         print("   请确保 Ollama 服务正在运行")
         raise
     

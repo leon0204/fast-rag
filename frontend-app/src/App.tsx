@@ -80,8 +80,11 @@ export default function App() {
               const n = [...prev]
               const last = n[n.length - 1]
               if (last && last.role === 'assistant') {
+                // 处理特殊字符 [NEWLINE]，将其转换为实际的换行符
+                let processedData = data.replace(/\[NEWLINE\]/g, '\n')
+                
                 // Capture <think>...</think> into last.thought, others into last.content
-                let remaining = data
+                let remaining = processedData
                 while (remaining.length > 0) {
                   const startIdx = remaining.indexOf('<think>')
                   const endIdx = remaining.indexOf('</think>')
