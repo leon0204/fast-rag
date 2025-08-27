@@ -1,15 +1,48 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
 export default function App() {
   const [query, setQuery] = useState('docker是什么')
   const [sessionId, setSessionId] = useState('demo')
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
   type ChatMessage = { role: 'user'|'assistant'; content: string; thought?: string }
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const [expandedThoughts, setExpandedThoughts] = useState<Set<number>>(new Set())
+  type HistoryItem = { id: string; title: string; updatedAt: number }
+  const [histories, setHistories] = useState<HistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyQuery, setHistoryQuery] = useState('')
+
+  // fetch histories from backend
+  async function fetchHistories(q: string = '') {
+    if (!API_BASE) return
+    setHistoryLoading(true)
+    try {
+      const url = new URL(`${API_BASE}/history/list`)
+      if (q) url.searchParams.set('query', q)
+      const resp = await fetch(url.toString())
+      if (resp.ok) {
+        const data = await resp.json()
+        const list: HistoryItem[] = Array.isArray(data) ? data : (data?.items ?? [])
+        setHistories(list)
+      }
+    } catch (_) {
+      // ignore; keep current list
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchHistories('') }, [])
+
+  // debounce search
+  useEffect(() => {
+    const t = setTimeout(() => { fetchHistories(historyQuery) }, 300)
+    return () => clearTimeout(t)
+  }, [historyQuery])
   
   // Append streaming chunk without duplicating overlapping suffix/prefix.
   function appendWithoutOverlap(base: string, chunk: string): string {
@@ -36,6 +69,9 @@ export default function App() {
     if (!q || loading) return
 
     setMessages(prev => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '', thought: '' }])
+
+    // refresh history list from backend after send (backend stores on request)
+    fetchHistories('')
     setQuery('')
     setLoading(true)
 
@@ -139,9 +175,53 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">RAG Chat</header>
-      <main className="messages" ref={messagesRef}>
+    <div className={`app ${sidebarOpen ? 'with-sidebar' : 'sidebar-collapsed'}`}>
+      {!sidebarOpen && (
+        <button
+          className={`sidebar-toggle closed`}
+          aria-label={'打开侧栏'}
+          onClick={() => setSidebarOpen(true)}
+        >
+          <span className="toggle-icon">▦</span>
+          <span className="tooltip">打开侧栏</span>
+        </button>
+      )}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
+        <div className="sidebar-header">
+          <div className="brand">fastRag</div>
+          <button className="collapse" onClick={() => setSidebarOpen(false)} title="折叠">⟨</button>
+        </div>
+        <div className="sidebar-search">
+          <input
+            value={historyQuery}
+            onChange={e => setHistoryQuery(e.target.value)}
+            placeholder="搜索历史..."
+          />
+        </div>
+        <button className="new-chat" onClick={() => {
+          const newId = Math.random().toString(36).slice(2, 8)
+          setSessionId(newId)
+          setMessages([])
+        }}>开启新对话</button>
+        <div className="history">
+          {historyLoading && <div className="history-loading">加载中...</div>}
+          {!historyLoading && histories.map(h => (
+              <button
+                key={h.id}
+                className={`history-item ${h.id===sessionId ? 'active': ''}`}
+                onClick={() => { setSessionId(h.id); setMessages([]) }}
+              >{h.title || h.id}</button>
+          ))}
+        </div>
+      </aside>
+      <div className="main">
+        <header className="header">
+          {!sidebarOpen && (
+            <button className="expand" onClick={() => setSidebarOpen(true)} title="展开">☰</button>
+          )}
+          <span>RAG Chat</span>
+        </header>
+        <main className="messages" ref={messagesRef}>
         {messages.map((m, i) => {
           if (m.role === 'user') {
             return (
@@ -177,11 +257,21 @@ export default function App() {
             </React.Fragment>
           )
         })}
-      </main>
-      <div className="composer">
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="输入你的问题" />
-        <input value={sessionId} onChange={e => setSessionId(e.target.value)} placeholder="会话ID(可选)" />
-        <button onClick={send} disabled={loading}>发送</button>
+        </main>
+        <div className="composer">
+          <div className="composer-input">
+            <textarea
+              rows={1}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="给 AI 发送消息"
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+            />
+            <div className="composer-actions">
+              <button className="send" onClick={send} disabled={loading} title="发送">↗</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
