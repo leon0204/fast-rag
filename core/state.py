@@ -238,7 +238,11 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
     relevant_context = get_relevant_context(rewritten_query, vault_embeddings, vault_content)
     retrieval_time = time.time() - retrieval_start
     print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
+    # 合并上下文并做硬阈值裁剪，避免不同查询因为上下文长度大幅度放大推理时延
     context_str = "\n".join(relevant_context) if relevant_context else ""
+    MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS", "1200"))
+    if len(context_str) > MAX_CONTEXT_CHARS:
+        context_str = context_str[:MAX_CONTEXT_CHARS]
     
     if context_str:
         yield f"<think>找到 {len(relevant_context)} 个相关文档片段</think>"
@@ -261,26 +265,41 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
         print(f"🚀 开始调用模型生成... (模型已预加载)")
     else:
         print(f"🚀 开始调用模型生成... (首次加载)")
+    # 通过 extra_body 传递给 Ollama，保持模型常驻并限制上下文
     stream = client.chat.completions.create(
         model=model,
         messages=messages,
-        max_tokens=2000,
+        max_tokens=int(os.environ.get("MAX_GENERATE_TOKENS", "800")),
         stream=True,
+        extra_body={
+            "keep_alive": "30m",
+            # 根据机器调整，较小的上下文更快；如需更大可提高
+            "options": {
+                "num_ctx": int(os.environ.get("NUM_CTX", "2048")),
+                # 控制生成长度，避免长回答导致耗时上升
+                "num_predict": int(os.environ.get("NUM_PREDICT", "800")),
+                # 合理利用 CPU 线程
+                "num_threads": max(1, __import__('os').cpu_count() or 1)
+            }
+        },
     )
 
-
-    generation_time = time.time() - generation_start
-    print(f"🤖 模型生成耗时: {generation_time:.2f}秒")
-
+    # 更精确的首 token 延迟与总体耗时
+    ttft = None
     collected = []
     for event in stream:
         delta = getattr(event.choices[0].delta, 'content', None)
         if delta:
+            if ttft is None:
+                ttft = time.time() - generation_start
+                print(f"⚡ 首token延迟(TTFT): {ttft:.2f}秒")
             collected.append(delta)
             yield delta
     final_answer = "".join(collected)
     conversation_history.append({"role": "assistant", "content": final_answer})
     total_time = time.time() - start_time
+    gen_time = time.time() - generation_start
+    print(f"🤖 模型生成耗时: {gen_time:.2f}秒")
     print(f"🎯 总耗时: {total_time:.2f}秒")
 
 
