@@ -2,16 +2,16 @@ import io
 from typing import List
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from PyPDF2 import PdfReader
 
-from core.state import app_state, append_to_vault, embed_texts, VAULT_PATH
+from core.vector_store import vector_store
 
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
+    """从PDF字节内容中提取所有页面文本并拼接返回"""
     reader = PdfReader(io.BytesIO(file_bytes))
     pages: List[str] = []
     for page in reader.pages:
@@ -23,6 +23,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def normalize_and_chunk_text(raw_text: str, max_chunk_size: int = 1000) -> List[str]:
+    """规范化空白并按句子边界切分文本，保证每块不超过max_chunk_size字符"""
     import re as _re
     # Normalize whitespace
     text = _re.sub(r"\s+", " ", raw_text or "").strip()
@@ -55,50 +56,50 @@ def normalize_and_chunk_text(raw_text: str, max_chunk_size: int = 1000) -> List[
 
 @router.post("")
 async def upload(files: List[UploadFile] = File(...)):
+    """上传文件并写入向量库：解析文本→正则分块→生成向量→入pgvector"""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
-    new_lines: List[str] = []
+    total_added = 0
     for f in files:
         data = await f.read()
         name_lower = (f.filename or "").lower()
         content = ""
+        file_type = "unknown"
+        
         if name_lower.endswith(".pdf"):
             content = extract_text_from_pdf(data)
+            file_type = "pdf"
         elif name_lower.endswith(".json"):
             try:
                 import json as _json
                 obj = _json.loads(data.decode("utf-8"))
                 content = _json.dumps(obj, ensure_ascii=False)
+                file_type = "json"
             except Exception:
                 try:
                     content = data.decode("utf-8")
+                    file_type = "text"
                 except Exception:
                     content = data.decode("latin-1", errors="ignore")
+                    file_type = "text"
         else:
             try:
                 content = data.decode("utf-8")
+                file_type = "text"
             except Exception:
                 content = data.decode("latin-1", errors="ignore")
+                file_type = "text"
 
-        # Apply original logic: normalize and split into sentence-bounded chunks
+        # 分块处理
         chunks = normalize_and_chunk_text(content, max_chunk_size=1000)
-        new_lines.extend(chunks)
+        
+        if chunks:
+            # 存储到向量数据库
+            try:
+                added_count = vector_store.store_chunks(chunks, f.filename or "unknown", file_type)
+                total_added += added_count
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"存储文件失败: {str(e)}")
 
-    if not new_lines:
-        return JSONResponse({"added": 0})
-
-    append_to_vault(VAULT_PATH, new_lines)
-    app_state.vault_content.extend([l + "\n" for l in new_lines])
-
-    try:
-        new_embeds = embed_texts(new_lines)
-        if app_state.vault_embeddings.nelement() == 0:
-            app_state.vault_embeddings = new_embeds
-        else:
-            app_state.vault_embeddings = __import__('torch').vstack([app_state.vault_embeddings, new_embeds])
-    except Exception:
-        # If embedding service is unavailable, keep content written; embeddings remain empty
-        pass
-
-    return {"added": len(new_lines)}
+    return {"added": total_added}

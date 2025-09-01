@@ -45,8 +45,6 @@ async def chat_stream(query: str = Form(...), session_id: Optional[str] = Form(N
             user_input=query,
             system_message=app_state.system_message,
             conversation_history=app_state.histories[sid],
-            vault_embeddings=app_state.vault_embeddings,
-            vault_content=app_state.vault_content,
             client=app_state.client,
             model=(model or DEFAULT_MODEL),
         ):

@@ -1,10 +1,8 @@
-# Fast RAG
+# Fast RAG（中文）
 
-[中文](README.zh-CN.md) | English
+[English](README.MD) | 中文
 
-> Local, privacy-first RAG using PostgreSQL + pgvector and Ollama. Streams responses via SSE. Simple, fast, hackable.
-
-
+> 本地、隐私优先的 RAG：使用 PostgreSQL + pgvector 与 Ollama，SSE 流式返回，简单、快速、易于改造。
 
 <p>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white"></a>
@@ -15,38 +13,38 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-black"></a>
 </p>
 
-## Features
-- Semantic search with pgvector (768-dim `nomic-embed-text`)
-- Streaming responses via SSE
-- Optional frontend: React + Vite + TypeScript
-- Local models via Ollama
-- Fast ingestion: normalize → sentence chunk → batch embed → insert
-- Manage corpus via REST (list, stats, chunks, search, delete)
+## 功能特性
+- pgvector 语义检索（768 维 `nomic-embed-text`）
+- SSE 流式响应
+- 可选前端：React + Vite + TypeScript
+- 本地模型：Ollama
+- 快速入库：规范化 → 句子分块 → 批量向量化 → 入库
+- 语料管理 REST：列表、统计、Chunks、搜索、删除
 
-## Architecture
+## 架构
 ![img_1.png](img_1.png)
 
 
-## Table of Contents
-- [Quick Start (Docker)](#quick-start-docker)
-- [Local Setup](#local-setup)
-- [Run](#run)
-- [Frontend (optional)](#frontend-optional)
+## 目录
+- [快速开始（Docker）](#快速开始docker)
+- [本地安装](#本地安装)
+- [运行](#运行)
+- [前端](#前端)
 - [API](#api)
-- [Database](#database)
-- [Performance Tuning](#performance-tuning)
-- [Troubleshooting](#troubleshooting)
+- [数据库](#数据库)
+- [性能调优](#性能调优)
+- [故障排除](#故障排除)
 - [License](#license)
 
 ---
 
-## Quick Start (Docker)
+## 快速开始（Docker）
 
-1) Install Docker / Docker Compose
+1) 安装 Docker / Docker Compose
 - macOS
 ```bash
 brew install --cask docker
-# or
+# 或
 brew install docker docker-compose
 ```
 - Ubuntu/Debian
@@ -57,15 +55,15 @@ sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-2) Deploy
+2) 部署
 ```bash
 chmod +x scripts/docker_deploy.sh start.sh stop.sh
 ./scripts/docker_deploy.sh
-# or quick start
+# 或快速启动
 ./start.sh
 ```
 
-3) Verify
+3) 验证
 ```bash
 docker compose ps
 docker compose logs postgres
@@ -74,62 +72,80 @@ docker exec fast_rag_postgres psql -U postgres -d fast_rag -c "SELECT version();
 
 ---
 
-## Local Setup
+## 本地安装
 ```bash
 pip install -r requirements.txt
-cp env.example .env   # edit DB_* for your environment
-python scripts/init_db.py   # if not using docker init
+cp env.example .env   # 根据环境配置 DB_*
+python scripts/init_db.py   # 若不使用 docker 的初始化
 ```
 
 ---
 
-## Run
+## 运行
 ```bash
 python main.py
 ```
-App: http://localhost:8000
+服务地址： http://localhost:8000
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
 ---
 
-## Frontend 
+## 前端 
 ![Screenshot](img_3.png)
 
-React + Vite + TypeScript app lives in `frontend-app/`.
+前端位于 `frontend-app/`（React + Vite + TypeScript）。
 
-Dev
+开发
 ```bash
 cd frontend-app
-npm install          # or: pnpm i / yarn
+npm install          # 或 pnpm i / yarn
 npm run dev          # http://localhost:5173
 ```
 
-Config
+配置
 ```bash
-# frontend-app/.env (example)
+# frontend-app/.env 示例
 VITE_API_BASE=http://localhost:8000
 ```
-The frontend uses SSE to `POST /chat/stream` and uploads via `POST /upload`.
+前端通过 `POST /chat/stream` 使用 SSE；通过 `POST /upload` 上传。
 
-Build & preview
+构建与预览
 ```bash
 cd frontend-app
 npm run build
-npm run preview      # serve dist/
+npm run preview      # 预览 dist/
 ```
 
-Notes
-- CORS is enabled in the backend for `*` by default (see `main.py`).
-- Update `VITE_API_BASE` if the API runs on a different host/port.
+注意
+- 后端默认已允许通配 CORS（见 `main.py`）。
+- 如果 API 在其他主机/端口，请更新 `VITE_API_BASE`。
 
 ---
 
+## API
+上传
+```http
+POST /upload        (multipart/form-data; 支持 PDF/JSON/TXT)
+```
+对话
+```http
+POST /chat/stream   (form: query, session_id 可选)
+```
+管理
+```http
+GET    /manage/files
+GET    /manage/stats
+GET    /manage/files/{file_name}/chunks?limit&offset&preview_length
+GET    /manage/files/{file_name}/search?q&limit&offset&preview_length
+DELETE /manage/files/{file_name}
+DELETE /manage/all
+```
 
 ---
 
-## Database
-Table
+## 数据库
+表
 ```sql
 CREATE TABLE document_chunks (
   id SERIAL PRIMARY KEY,
@@ -141,7 +157,7 @@ CREATE TABLE document_chunks (
   embedding vector(768)
 );
 ```
-Indexes
+索引
 ```sql
 CREATE INDEX idx_document_chunks_embedding 
   ON document_chunks USING hnsw (embedding vector_cosine_ops);
@@ -151,12 +167,12 @@ CREATE INDEX idx_document_chunks_file_name
 
 ---
 
-## Performance Tuning
-- Use HNSW index for fast similarity search
-- Batch inserts for ingestion; prepared queries for retrieval
-- Cache query embeddings; reuse DB connections
+## 性能调优
+- 使用 HNSW 向量索引以加速相似度检索
+- 入库使用批量插入；检索使用预编译语句
+- 缓存查询向量；复用数据库连接
 
-Example
+示例
 ```sql
 EXPLAIN ANALYZE SELECT * FROM document_chunks
 ORDER BY embedding <=> '[0.1, 0.2, ...]' LIMIT 3;
@@ -164,22 +180,22 @@ ORDER BY embedding <=> '[0.1, 0.2, ...]' LIMIT 3;
 
 ---
 
-## Troubleshooting
-- Database connection
+## 故障排除
+- 数据库连接
 ```bash
 psql -h localhost -U postgres -d fast_rag
 ```
-- pgvector extension
+- pgvector 扩展
 ```sql
 SELECT * FROM pg_extension WHERE extname = 'vector';
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
-- Permissions
+- 权限
 ```sql
 GRANT ALL PRIVILEGES ON DATABASE fast_rag TO your_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO your_user;
 ```
-- Logs
+- 日志
 ```bash
 docker compose logs -f postgres
 python main.py 2>&1 | tee app.log
@@ -187,11 +203,5 @@ python main.py 2>&1 | tee app.log
 
 ---
 
-
-
 ## License
-MIT. See `LICENSE`.
-
-
-
-
+MIT. 详见 `LICENSE`。
