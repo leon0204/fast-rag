@@ -1,5 +1,3 @@
-vault_file: "vault.txt"
-embeddings_file: "vault_embeddings.json"
 ollama_model: "llama3"
 top_k: 2
 system_message: "你是一个智能助手，擅长从给定文本中提取最有用的信息，并结合上下文回答用户问题。"

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.state import initialize_state_on_startup
 from api.upload import router as upload_router
 from api.chat import router as chat_router
+from api.manage import router as manage_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,6 +27,7 @@ app.add_middleware(
 
 app.include_router(upload_router)
 app.include_router(chat_router)
+app.include_router(manage_router)
 
 
 @app.get("/health")

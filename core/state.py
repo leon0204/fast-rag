@@ -8,45 +8,19 @@ import ollama
 from PyPDF2 import PdfReader
 from openai import OpenAI
 
+from core.vector_store import vector_store
+from config.database import init_database, get_chunk_count
 
-VAULT_PATH = os.environ.get("VAULT_PATH", "vault.txt")
+
 # DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:latest")  # 使用更小的模型
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:latest")  # 可使用更小的模型
 
 
-def read_vault_lines(vault_path: str) -> List[str]:
-    if not os.path.exists(vault_path):
-        return []
-    with open(vault_path, 'r', encoding='utf-8') as f:
-        return f.readlines()
-
-
-def append_to_vault(vault_path: str, lines: List[str]) -> None:
-    if not lines:
-        return
-    with open(vault_path, 'a', encoding='utf-8') as f:
-        for line in lines:
-            f.write(line if line.endswith('\n') else line + '\n')
-
-
-def embed_texts(texts: List[str]) -> torch.Tensor:
-    if not texts:
-        return torch.empty((0,))
-    vectors: List[List[float]] = []
-    for content in texts:
-        resp = ollama.embeddings(model='nomic-embed-text', prompt=content)
-        vectors.append(resp["embedding"])
-    return torch.tensor(vectors)
-
-
-def get_relevant_context(rewritten_input: str, vault_embeddings: torch.Tensor, vault_content: List[str], top_k: int = 3) -> List[str]:
+# vector_store
+def get_relevant_context(rewritten_input: str, top_k: int = 3) -> List[str]:
     import time
     
-    if vault_embeddings is None or vault_embeddings.nelement() == 0:
-        print("vault_embeddings 为空，跳过检索")
-        return []
-    
-    print(f"开始检索相关上下文，vault_content 长度: {len(vault_content)}")
+    print(f"开始检索相关上下文")
     
     # 测量向量嵌入生成时间
     embedding_start = time.time()
@@ -56,22 +30,22 @@ def get_relevant_context(rewritten_input: str, vault_embeddings: torch.Tensor, v
         input_embedding = app_state.query_embedding_cache[rewritten_input]
         print(f"📊 使用缓存的向量嵌入")
     else:
-        input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)["embedding"]
+        resp = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)
+        # 确保向量是浮点数列表
+        input_embedding = [float(x) for x in resp["embedding"]]
         app_state.query_embedding_cache[rewritten_input] = input_embedding
         print(f"📊 生成新的向量嵌入并缓存")
     
     embedding_time = time.time() - embedding_start
     print(f"📊 向量嵌入处理耗时: {embedding_time:.2f}秒")
     
-    # 测量相似度计算时间
-    similarity_start = time.time()
-    cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
-    top_k = min(top_k, len(cos_scores))
-    top_indices = torch.topk(cos_scores, k=top_k)[1].tolist()
-    similarity_time = time.time() - similarity_start
-    print(f"🔍 相似度计算耗时: {similarity_time:.2f}秒")
+    # 测量向量检索时间
+    retrieval_start = time.time()
+    similar_chunks = vector_store.search_similar(input_embedding, top_k)
+    retrieval_time = time.time() - retrieval_start
+    print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
     
-    result = [vault_content[idx].strip() for idx in top_indices]
+    result = [chunk['content'].strip() for chunk in similar_chunks]
     print(f"检索完成，找到 {len(result)} 个相关片段")
     return result
 
@@ -175,7 +149,7 @@ def rewrite_query_stream(user_input: str, conversation_history: List[Dict[str, s
 #
 
 def rag_chat_stream(user_input: str, system_message: str, conversation_history: List[Dict[str, str]],
-                    vault_embeddings: torch.Tensor, vault_content: List[str], client: OpenAI, model: str) -> Iterator[str]:
+                    client: OpenAI, model: str) -> Iterator[str]:
     """Yield assistant content chunks as they stream in, and update history when done."""
     import time
     start_time = time.time()
@@ -235,10 +209,14 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
     # 检索相关上下文
     yield "<think>正在检索相关上下文信息...</think>"
     retrieval_start = time.time()
-    relevant_context = get_relevant_context(rewritten_query, vault_embeddings, vault_content)
+    relevant_context = get_relevant_context(rewritten_query)
     retrieval_time = time.time() - retrieval_start
     print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
+    # 合并上下文并做硬阈值裁剪，避免不同查询因为上下文长度大幅度放大推理时延
     context_str = "\n".join(relevant_context) if relevant_context else ""
+    MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS", "1200"))
+    if len(context_str) > MAX_CONTEXT_CHARS:
+        context_str = context_str[:MAX_CONTEXT_CHARS]
     
     if context_str:
         yield f"<think>找到 {len(relevant_context)} 个相关文档片段</think>"
@@ -261,33 +239,46 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
         print(f"🚀 开始调用模型生成... (模型已预加载)")
     else:
         print(f"🚀 开始调用模型生成... (首次加载)")
+    # 通过 extra_body 传递给 Ollama，保持模型常驻并限制上下文
     stream = client.chat.completions.create(
         model=model,
         messages=messages,
-        max_tokens=2000,
+        max_tokens=int(os.environ.get("MAX_GENERATE_TOKENS", "800")),
         stream=True,
+        extra_body={
+            "keep_alive": "30m",
+            # 根据机器调整，较小的上下文更快；如需更大可提高
+            "options": {
+                "num_ctx": int(os.environ.get("NUM_CTX", "2048")),
+                # 控制生成长度，避免长回答导致耗时上升
+                "num_predict": int(os.environ.get("NUM_PREDICT", "800")),
+                # 合理利用 CPU 线程
+                "num_threads": max(1, __import__('os').cpu_count() or 1)
+            }
+        },
     )
 
-
-    generation_time = time.time() - generation_start
-    print(f"🤖 模型生成耗时: {generation_time:.2f}秒")
-
+    # 更精确的首 token 延迟与总体耗时
+    ttft = None
     collected = []
     for event in stream:
         delta = getattr(event.choices[0].delta, 'content', None)
         if delta:
+            if ttft is None:
+                ttft = time.time() - generation_start
+                print(f"⚡ 首token延迟(TTFT): {ttft:.2f}秒")
             collected.append(delta)
             yield delta
     final_answer = "".join(collected)
     conversation_history.append({"role": "assistant", "content": final_answer})
     total_time = time.time() - start_time
+    gen_time = time.time() - generation_start
+    print(f"🤖 模型生成耗时: {gen_time:.2f}秒")
     print(f"🎯 总耗时: {total_time:.2f}秒")
 
 
 class AppState:
     def __init__(self) -> None:
-        self.vault_content: List[str] = []
-        self.vault_embeddings: torch.Tensor = torch.empty((0,))
         self.histories: Dict[str, List[Dict[str, str]]] = {}
         self.query_embedding_cache: Dict[str, List[float]] = {}  # 缓存查询向量嵌入
         self.model_loaded: bool = False  # 标记模型是否已加载
@@ -308,29 +299,39 @@ def initialize_state_on_startup() -> None:
     print("🚀 正在启动 RAG 服务...")
     print("=" * 50)
     
-    # 预加载模型
-    print("\n🔥 预加载模型...")
+    # 初始化数据库
+    print("\n🗄️  初始化数据库...")
     try:
-        import time
-        warmup_start = time.time()
-        
-        # 发送一个简单的请求来预加载模型
-        test_response = app_state.client.chat.completions.create(
-            model=DEFAULT_MODEL,
-            messages=[{"role": "user", "content": "你好"}],
-            max_tokens=10,
-        )
-        
-        warmup_time = time.time() - warmup_start
-        print(f"✅ 模型预加载完成，耗时: {warmup_time:.2f}秒")
-        print(f"   模型: {DEFAULT_MODEL}")
-        print(f"   模型响应测试: {test_response.choices[0].message.content}")
-        app_state.model_loaded = True
-        
+        init_database()
+        print("✅ 数据库初始化完成")
     except Exception as e:
-        print(f"❌ 模型预加载失败: {str(e)}")
-        print("   请确保 Ollama 服务正在运行")
+        print(f"❌ 数据库初始化失败: {str(e)}")
+        print("   请确保 PostgreSQL 服务正在运行且已安装 pgvector 扩展")
         raise
+    
+    # 预加载模型
+    # print("\n🔥 预加载模型...")
+    # try:
+    #     import time
+    #     warmup_start = time.time()
+        
+    #     # 发送一个简单的请求来预加载模型
+    #     test_response = app_state.client.chat.completions.create(
+    #         model=DEFAULT_MODEL,
+    #         messages=[{"role": "user", "content": "你好"}],
+    #         max_tokens=10,
+    #     )
+        
+    #     warmup_time = time.time() - warmup_start
+    #     print(f"✅ 模型预加载完成，耗时: {warmup_time:.2f}秒")
+    #     print(f"   模型: {DEFAULT_MODEL}")
+    #     print(f"   模型响应测试: {test_response.choices[0].message.content}")
+    #     app_state.model_loaded = True
+        
+    # except Exception as e:
+    #     print(f"❌ 模型预加载失败: {str(e)}")
+    #     print("   请确保 Ollama 服务正在运行")
+    #     raise
     
     # 检查embedding模型
     print("\n🔍 检查向量嵌入模型...")
@@ -344,31 +345,17 @@ def initialize_state_on_startup() -> None:
         print("   请确保 Ollama 服务正在运行且包含 nomic-embed-text 模型")
         raise
     
-    # 加载向量数据库
-    print("\n📚 加载向量数据库...")
-    contents = read_vault_lines(VAULT_PATH)
-    print(f"   读取文件: {VAULT_PATH}")
-    print(f"   文档数量: {len(contents)}")
-    
-    if len(contents) == 0:
-        print("⚠️  警告: 向量数据库为空，请先上传文档")
-        app_state.vault_content = []
-        app_state.vault_embeddings = torch.empty((0,))
-    else:
-        print(f"   文档总长度: {sum(len(content) for content in contents)} 字符")
-        
-        # 生成向量嵌入
-        print("\n🔄 生成向量嵌入...")
-        try:
-            app_state.vault_content = contents
-            app_state.vault_embeddings = embed_texts(app_state.vault_content)
-            print(f"✅ 向量嵌入生成成功")
-            print(f"   向量矩阵形状: {app_state.vault_embeddings.shape}")
-            print(f"   向量数量: {app_state.vault_embeddings.shape[0]}")
-            print(f"   向量维度: {app_state.vault_embeddings.shape[1]}")
-        except Exception as e:
-            print(f"❌ 向量嵌入生成失败: {str(e)}")
-            raise
+    # 检查向量数据库状态
+    print("\n📚 检查向量数据库状态...")
+    try:
+        chunk_count = get_chunk_count()
+        print(f"✅ 向量数据库连接成功")
+        print(f"   当前文档块数量: {chunk_count}")
+        if chunk_count == 0:
+            print("⚠️  警告: 向量数据库为空，请先上传文档")
+    except Exception as e:
+        print(f"❌ 向量数据库连接失败: {str(e)}")
+        raise
     
     print("\n" + "=" * 50)
     print("🎉 RAG 服务启动成功！")
