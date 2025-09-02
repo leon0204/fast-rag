@@ -19,7 +19,7 @@
 - Semantic search with pgvector (768-dim `nomic-embed-text`)
 - Streaming responses via SSE
 - Optional frontend: React + Vite + TypeScript
-- Local models via Ollama
+- Local models via Ollama or openai api
 - Fast ingestion: normalize → sentence chunk → batch embed → insert
 - Manage corpus via REST (list, stats, chunks, search, delete)
 

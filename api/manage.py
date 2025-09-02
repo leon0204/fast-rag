@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 
 from core.vector_store import vector_store
 from config.database import get_chunk_count, clear_all_chunks
+from config.models import model_config
+from core.model_client import ModelClientFactory
 
 router = APIRouter(prefix="/manage", tags=["manage"])
 
@@ -103,3 +105,88 @@ async def search_in_file(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文件内搜索失败: {str(e)}")
+
+
+@router.get("/model/config")
+async def get_model_config() -> Dict:
+    """获取当前模型配置信息"""
+    try:
+        current_client = ModelClientFactory.get_current_client()
+        model_info = current_client.get_model_info()
+        
+        return {
+            "current_model_type": model_config.current_model_type,
+            "model_info": model_info,
+            "system_message": model_config.system_message,
+            "rag_config": {
+                "top_k": model_config.top_k,
+                "max_context_chars": model_config.max_context_chars,
+                "max_generate_tokens": model_config.max_generate_tokens
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取模型配置失败: {str(e)}")
+
+
+@router.post("/model/switch")
+async def switch_model(model_type: str) -> Dict:
+    """切换模型类型（ollama 或 deepseek）"""
+    try:
+        if model_type not in ["ollama", "deepseek"]:
+            raise HTTPException(status_code=400, detail="不支持的模型类型，支持: ollama, deepseek")
+        
+        # 验证新模型配置
+        if model_type == "deepseek" and not model_config.deepseek.api_key:
+            raise HTTPException(status_code=400, detail="DeepSeek API key 未配置")
+        
+        # 测试新模型连接
+        test_client = ModelClientFactory.create_client(model_type)
+        test_client.embeddings("test")
+        
+        # 更新配置
+        model_config.current_model_type = model_type
+        
+        return {
+            "message": f"成功切换到 {model_type} 模型",
+            "current_model_type": model_config.current_model_type
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"切换模型失败: {str(e)}")
+
+
+@router.post("/model/test")
+async def test_model_connection() -> Dict:
+    """测试当前模型连接状态"""
+    try:
+        current_client = ModelClientFactory.get_current_client()
+        
+        # 测试嵌入功能
+        test_embedding = current_client.embeddings("test")
+        embedding_dim = len(test_embedding)
+        
+        # 测试聊天功能（非流式）
+        test_messages = [{"role": "user", "content": "你好"}]
+        test_response = current_client.chat_completion(
+            messages=test_messages,
+            stream=False,
+            max_tokens=10
+        )
+        
+        return {
+            "status": "success",
+            "model_type": model_config.current_model_type,
+            "embedding_test": {
+                "status": "success",
+                "dimension": embedding_dim
+            },
+            "chat_test": {
+                "status": "success",
+                "response": test_response.choices[0].message.content
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "model_type": model_config.current_model_type,
+            "error": str(e)
+        }

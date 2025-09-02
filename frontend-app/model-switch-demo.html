@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型切换按钮演示</title>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0;
+            padding: 0;
+        }
+        
+        body { 
+            font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Noto Sans SC, sans-serif; 
+            color: #101828; 
+            background: #ffffff; 
+            padding: 20px;
+        }
+        
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            padding: 16px;
+            font-weight: 600;
+            border-bottom: 1px solid #bfdbfe;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .model-selector {
+            position: relative;
+            margin-left: auto;
+        }
+        
+        .model-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            color: #374151;
+        }
+        
+        .model-toggle:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+        
+        .model-icon {
+            font-size: 16px;
+        }
+        
+        .model-name {
+            font-weight: 500;
+        }
+        
+        .model-arrow {
+            font-size: 12px;
+            color: #6b7280;
+            transition: transform 0.2s ease;
+        }
+        
+        .model-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            min-width: 280px;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        
+        .model-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        .model-option:last-of-type {
+            border-bottom: none;
+        }
+        
+        .model-option:hover {
+            background-color: #f8fafc;
+        }
+        
+        .model-option.selected {
+            background-color: #eff6ff;
+        }
+        
+        .model-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .model-option .model-name {
+            font-weight: 600;
+            color: #111827;
+            font-size: 14px;
+        }
+        
+        .model-description {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1.4;
+        }
+        
+        .checkmark {
+            color: #059669;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .switch-model-btn {
+            width: 100%;
+            padding: 12px 16px;
+            background: #1f2937;
+            color: white;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .switch-model-btn:hover {
+            background: #374151;
+        }
+        
+        .demo-info {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .demo-info h3 {
+            margin-bottom: 10px;
+            color: #374151;
+        }
+        
+        .demo-info p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="header">
+            <span>RAG Chat</span>
+            
+            <!-- 模型切换按钮 -->
+            <div class="model-selector">
+                <button 
+                    class="model-toggle"
+                    onclick="toggleModelSelector()"
+                >
+                    <span class="model-icon" id="currentModelIcon">🦙</span>
+                    <span class="model-name" id="currentModelName">Ollama</span>
+                    <span class="model-arrow" id="modelArrow">▼</span>
+                </button>
+                
+                <div class="model-dropdown" id="modelDropdown" style="display: none;">
+                    <div 
+                        class="model-option selected"
+                        onclick="selectModel('ollama', 'Ollama', '🦙')"
+                    >
+                        <div class="model-info">
+                            <span class="model-name">Ollama</span>
+                            <span class="model-description">本地部署，快速响应</span>
+                        </div>
+                        <span class="checkmark">✓</span>
+                    </div>
+                    
+                    <div 
+                        class="model-option"
+                        onclick="selectModel('deepseek', 'DeepSeek', '🚀')"
+                    >
+                        <div class="model-info">
+                            <span class="model-name">DeepSeek</span>
+                            <span class="model-description">云端AI，深度思考</span>
+                        </div>
+                    </div>
+                    
+                    <button class="switch-model-btn">
+                        切换模型回答
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="demo-info">
+            <h3>模型切换按钮功能说明</h3>
+            <p>✅ <strong>点击按钮</strong>：显示/隐藏模型选择下拉菜单</p>
+            <p>✅ <strong>选择模型</strong>：点击不同模型选项进行切换</p>
+            <p>✅ <strong>视觉反馈</strong>：当前选中的模型会显示绿色勾选标记</p>
+            <p>✅ <strong>悬停效果</strong>：鼠标悬停时按钮和选项会有颜色变化</p>
+            <p>✅ <strong>切换按钮</strong>：底部的"切换模型回答"按钮用于确认切换</p>
+            <p>✅ <strong>响应式设计</strong>：适配不同屏幕尺寸，美观易用</p>
+        </div>
+    </div>
+
+    <script>
+        let currentModel = 'ollama';
+        
+        function toggleModelSelector() {
+            const dropdown = document.getElementById('modelDropdown');
+            const arrow = document.getElementById('modelArrow');
+            
+            if (dropdown.style.display === 'none') {
+                dropdown.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                dropdown.style.display = 'none';
+                arrow.textContent = '▼';
+            }
+        }
+        
+        function selectModel(modelId, modelName, modelIcon) {
+            // 更新当前模型
+            currentModel = modelId;
+            document.getElementById('currentModelName').textContent = modelName;
+            document.getElementById('currentModelIcon').textContent = modelIcon;
+            
+            // 更新选中状态
+            document.querySelectorAll('.model-option').forEach(option => {
+                option.classList.remove('selected');
+            });
+            
+            // 为选中的选项添加选中状态
+            event.currentTarget.classList.add('selected');
+            
+            // 添加勾选标记
+            event.currentTarget.innerHTML = `
+                <div class="model-info">
+                    <span class="model-name">${modelName}</span>
+                    <span class="model-description">${modelId === 'ollama' ? '本地部署，快速响应' : '云端AI，深度思考'}</span>
+                </div>
+                <span class="checkmark">✓</span>
+            `;
+            
+            // 关闭下拉菜单
+            toggleModelSelector();
+            
+            console.log(`模型已切换到: ${modelName} (${modelId})`);
+        }
+        
+        // 点击外部区域关闭下拉菜单
+        document.addEventListener('click', function(event) {
+            const modelSelector = document.querySelector('.model-selector');
+            const dropdown = document.getElementById('modelDropdown');
+            const arrow = document.getElementById('modelArrow');
+            
+            if (!modelSelector.contains(event.target)) {
+                dropdown.style.display = 'none';
+                arrow.textContent = '▼';
+            }
+        });
+        
+        // ESC键关闭下拉菜单
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const dropdown = document.getElementById('modelDropdown');
+                const arrow = document.getElementById('modelArrow');
+                
+                if (dropdown.style.display !== 'none') {
+                    dropdown.style.display = 'none';
+                    arrow.textContent = '▼';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -20,18 +20,98 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe U
 .history-item { text-align: left; border: 1px solid #bfdbfe; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; cursor: pointer; color: #0b1324; }
 .history-item.active { border-color: #60a5fa; background: #dbeafe; color: #1e40af; }
 .history-loading { padding: 8px 12px; color: #64748b; }
+
+/* 历史记录项样式 */
+.history-item-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-item {
+  flex: 1;
+  text-align: left;
+  border: 1px solid #bfdbfe;
+  background: #f0f9ff;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  color: #0b1324;
+  transition: all 0.2s ease;
+}
+
+.history-item:hover {
+  background: #e0f2fe;
+  border-color: #60a5fa;
+}
+
+.history-item.active {
+  border-color: #60a5fa;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.history-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-title {
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.message-count {
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.update-time {
+  font-size: 11px;
+}
+
+.history-delete {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.history-delete:hover {
+  background: #fef2f2;
+  opacity: 1;
+}
+
 .main { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; max-width: 900px; margin: 0 auto; width: 100%; }
-.header { padding: 16px; font-weight: 600; border-bottom: 1px solid #bfdbfe; background: #ffffff; display: flex; align-items: center; gap: 8px; }
+.header { padding: 16px; font-weight: 600; border-bottom: 1px solid #bfdbfe; background: #ffffff; display: flex; align-items: center; gap: 16px; }
 .messages { padding: 16px; overflow-y: auto; }
-.message { background: #ffffff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 12px 14px; margin: 10px 0; line-height: 1.6; white-space: pre-wrap; max-width: 80%; color: #101828; }
-.message.user { background: #f0f9ff; border-color: #bfdbfe; margin-left: auto; text-align: right; }
-.message.assistant { background: #eff6ff; border-color: #60a5fa; color: #0b1324; margin-right: auto; }
-.thought { border: 1px solid #bfdbfe; background: #f8fbff; border-radius: 10px; margin: 10px 0; max-width: 80%; margin-right: auto; }
-.thought-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; }
-.badge { font-size: 12px; color: #ffffff; background: #dc2626; padding: 2px 8px; border-radius: 999px; }
-.thought-body { padding: 8px 10px; color: #991b1b; white-space: pre-wrap; }
-.thought.collapsed .thought-body { display: none; }
-.toggle { background: transparent; color: #dc2626; border: none; padding: 4px 8px; cursor: pointer; }
+.message { background: #ffffff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 12px 14px; margin: 10px 0; line-height: 1.6; white-space: pre-wrap; max-width: 80%; color: #000000; }
+.message.user { background: #f0f9ff; border-color: #bfdbfe; color: #000000; margin-left: auto; text-align: right; }
+.message.assistant { background: #ffffff; border: none; color: #000000; margin-right: auto; }
+.thought { background: #f8fafc; border-radius: 8px; margin: 10px 0; max-width: 80%; margin-right: auto; }
+.thought-header { display: flex; align-items: center; padding: 8px 12px 4px 12px; }
+.badge { font-size: 11px; color: #ffffff; background: #6b7280; padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+.thought-body { padding: 8px 12px 12px 12px; color: #6b7280; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
 .composer { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px; border-top: 1px solid #bfdbfe; background: #ffffff; }
 .composer-input { display: flex; align-items: flex-end; background: #f8fbff; border: 1px solid #bfdbfe; border-radius: 14px; padding: 8px 10px; }
 .composer-input textarea { flex: 1; resize: none; border: none; background: transparent; outline: none; font: inherit; padding: 6px 8px; max-height: 180px; }
@@ -39,3 +119,203 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe U
 .composer .send { background: #3b82f6; color: white; border: none; border-radius: 10px; padding: 10px 12px; cursor: pointer; }
 .session { display: grid; grid-template-columns: 220px; }
 .session input { border: 1px solid #bfdbfe; border-radius: 10px; padding: 8px 10px; }
+
+/* 模型切换按钮样式 */
+.model-selector {
+  position: relative;
+  margin-left: auto;
+}
+
+.model-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: #374151;
+}
+
+.model-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.model-icon {
+  font-size: 16px;
+}
+
+.model-name {
+  font-weight: 500;
+}
+
+.model-arrow {
+  font-size: 12px;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.model-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  min-width: 280px;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.model-option:last-of-type {
+  border-bottom: none;
+}
+
+.model-option:hover {
+  background-color: #f8fafc;
+}
+
+.model-option.selected {
+  background-color: #eff6ff;
+}
+
+.model-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-option .model-name {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+}
+
+.model-description {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.checkmark {
+  color: #059669;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.switch-model-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background: #1f2937;
+  color: white;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.switch-model-btn:hover {
+  background: #374151;
+}
+
+/* 调整header布局 */
+.header {
+  padding: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid #bfdbfe;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* AI消息样式 */
+.ai-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ai-logo {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.ai-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-content {
+  line-height: 1.6;
+  color: #000000;
+}
+
+/* 模型切换提示消息样式 */
+.model-switch-message {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  animation: slideIn 0.3s ease-out;
+  margin-left: auto;
+  margin-right: 16px;
+  max-width: 300px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-switch-message.success {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.model-switch-message.error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

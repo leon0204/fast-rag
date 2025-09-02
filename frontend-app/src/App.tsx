@@ -11,10 +11,83 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const [expandedThoughts, setExpandedThoughts] = useState<Set<number>>(new Set())
-  type HistoryItem = { id: string; title: string; updatedAt: number }
+  type HistoryItem = { 
+    id: string; 
+    title: string; 
+    updatedAt: number;
+    message_count?: number;
+    updated_at?: string;
+  }
   const [histories, setHistories] = useState<HistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
+  
+  // 模型切换相关状态
+  const [currentModel, setCurrentModel] = useState('Ollama')
+  const [showModelSelector, setShowModelSelector] = useState(false)
+  const [modelSwitchMessage, setModelSwitchMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
+  
+  // 模型配置
+  const models = [
+    {
+      id: 'ollama',
+      name: 'Ollama',
+      description: '本地部署，快速响应',
+      icon: '🦙'
+    },
+    {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      description: '云端AI，深度思考',
+      icon: '🚀'
+    }
+  ]
+
+  // 切换模型函数
+  async function switchModel(modelId: string) {
+    try {
+      const response = await fetch(`${API_BASE}/manage/model/switch?model_type=${modelId}`, {
+        method: 'POST'
+      })
+      if (response.ok) {
+        const result = await response.json()
+        // 更新当前模型名称
+        const modelName = models.find(m => m.id === modelId)?.name || modelId
+        setCurrentModel(modelName)
+        // 显示成功提示
+        setModelSwitchMessage({
+          type: 'success',
+          text: `模型切换成功: ${result.message}`
+        })
+        // 3秒后自动清除提示
+        setTimeout(() => {
+          setModelSwitchMessage(null)
+        }, 3000)
+        console.log(`模型已切换到: ${modelId}`)
+      } else {
+        const errorData = await response.json()
+        setModelSwitchMessage({
+          type: 'error',
+          text: `模型切换失败: ${errorData.detail || '未知错误'}`
+        })
+        // 5秒后自动清除错误提示
+        setTimeout(() => {
+          setModelSwitchMessage(null)
+        }, 5000)
+        console.error('模型切换失败')
+      }
+    } catch (error) {
+      setModelSwitchMessage({
+        type: 'error',
+        text: `模型切换出错: ${error}`
+      })
+      // 5秒后自动清除错误提示
+      setTimeout(() => {
+        setModelSwitchMessage(null)
+      }, 5000)
+      console.error('模型切换出错:', error)
+    }
+  }
 
   // fetch histories from backend
   async function fetchHistories(q: string = '') {
@@ -36,7 +109,54 @@ export default function App() {
     }
   }
 
+  // 删除历史记录
+  async function deleteHistory(sessionId: string) {
+    if (!API_BASE) return
+    try {
+      const resp = await fetch(`${API_BASE}/history/session/${sessionId}`, {
+        method: 'DELETE'
+      })
+      if (resp.ok) {
+        // 从列表中移除
+        setHistories(prev => prev.filter(h => h.id !== sessionId))
+        // 如果删除的是当前会话，清空消息
+        if (sessionId === sessionId) {
+          setMessages([])
+          const newId = Math.random().toString(36).slice(2, 8)
+          setSessionId(newId)
+        }
+      }
+    } catch (error) {
+      console.error('删除历史记录失败:', error)
+    }
+  }
+
   useEffect(() => { fetchHistories('') }, [])
+
+  // 点击外部区域关闭模型选择器
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as Element
+      if (showModelSelector && !target.closest('.model-selector')) {
+        setShowModelSelector(false)
+      }
+    }
+
+    // ESC键关闭模型选择器
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && showModelSelector) {
+        setShowModelSelector(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [showModelSelector])
 
   // debounce search
   useEffect(() => {
@@ -206,11 +326,35 @@ export default function App() {
         <div className="history">
           {historyLoading && <div className="history-loading">加载中...</div>}
           {!historyLoading && histories.map(h => (
-              <button
-                key={h.id}
-                className={`history-item ${h.id===sessionId ? 'active': ''}`}
-                onClick={() => { setSessionId(h.id); setMessages([]) }}
-              >{h.title || h.id}</button>
+              <div key={h.id} className="history-item-container">
+                <button
+                  className={`history-item ${h.id===sessionId ? 'active': ''}`}
+                  onClick={() => { setSessionId(h.id); setMessages([]) }}
+                >
+                  <div className="history-item-content">
+                    <div className="history-title">{h.title || h.id}</div>
+                    <div className="history-meta">
+                      <span className="message-count">{h.message_count || 0} 条消息</span>
+                      <span className="update-time">
+                        {h.updated_at ? new Date(h.updated_at).toLocaleString() : 
+                         new Date(h.updatedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  className="history-delete"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (confirm('确定要删除这个对话吗？')) {
+                      deleteHistory(h.id)
+                    }
+                  }}
+                  title="删除对话"
+                >
+                  🗑️
+                </button>
+              </div>
           ))}
         </div>
       </aside>
@@ -220,6 +364,54 @@ export default function App() {
             <button className="expand" onClick={() => setSidebarOpen(true)} title="展开">☰</button>
           )}
           <span>RAG Chat</span>
+          
+          {/* 模型切换提示消息 */}
+          {modelSwitchMessage && (
+            <div className={`model-switch-message ${modelSwitchMessage.type}`}>
+              {modelSwitchMessage.text}
+            </div>
+          )}
+          
+          {/* 模型切换按钮 */}
+          <div className="model-selector">
+            <button 
+              className="model-toggle"
+              onClick={() => setShowModelSelector(!showModelSelector)}
+            >
+              <span className="model-icon">
+                {models.find(m => m.name === currentModel)?.icon || '🤖'}
+              </span>
+              <span className="model-name">{currentModel}</span>
+              <span className="model-arrow">{showModelSelector ? '▲' : '▼'}</span>
+            </button>
+            
+            {showModelSelector && (
+              <div className="model-dropdown">
+                {models.map(model => (
+                  <div 
+                    key={model.id}
+                    className={`model-option ${currentModel === model.name ? 'selected' : ''}`}
+                    onClick={() => {
+                      setShowModelSelector(false)
+                      // 调用后端API切换模型
+                      switchModel(model.id)
+                    }}
+                  >
+                    <div className="model-info">
+                      <span className="model-name">{model.name}</span>
+                      <span className="model-description">{model.description}</span>
+                    </div>
+                    {currentModel === model.name && (
+                      <span className="checkmark">✓</span>
+                    )}
+                  </div>
+                ))}
+                <button className="switch-model-btn">
+                  切换模型回答
+                </button>
+              </div>
+            )}
+          </div>
         </header>
         <main className="messages" ref={messagesRef}>
         {messages.map((m, i) => {
@@ -232,27 +424,44 @@ export default function App() {
           return (
             <React.Fragment key={i}>
               {m.thought ? (
-                <div className={`thought ${expanded ? 'expanded' : 'collapsed'}`}>
+                <div className="thought">
                   <div className="thought-header">
                     <span className="badge">思考中</span>
-                    <button
-                      className="toggle"
-                      onClick={() => {
-                        setExpandedThoughts(prev => {
-                          const next = new Set(prev)
-                          if (next.has(i)) next.delete(i); else next.add(i)
-                          return next
-                        })
-                      }}
-                    >{expanded ? '隐藏' : '显示'}</button>
                   </div>
-                  {expanded ? (
-                    <div className="thought-body">{m.thought}</div>
-                  ) : null}
+                  <div className="thought-body">{m.thought}</div>
                 </div>
               ) : null}
               {m.content && (
-                <div className="message assistant">{m.content}</div>
+                <div className="message assistant">
+                  <div className="ai-message-header">
+                    <div className="ai-logo">
+                      <svg width="16" height="16" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2697" xmlns:xlink="http://www.w3.org/1999/xlink">
+                        <path d="M454.8 625.6l-63.6-98-4-6.4-1.2-2-2.8-4.4h-10v422h381.6l-3.2-8.8c-3.6-9.2-5.2-18.8-5.2-28.8 0-16.4 4.8-32 14.8-46.8l2-2.8-27.2-66.4 84 24.4 2-0.8c18-6.8 37.2-10 57.2-10 4 0 7.2 0 10 0.4l6.8 0.4v-172H454.8zM882.4 784h-4c-20.8 0-40.8 3.2-59.6 10l-105.6-30.8 34.4 84.8c-10 15.6-15.2 33.2-15.2 51.2 0 8.4 1.2 16.4 3.2 24.4H385.6v-380.4l62 95.6h434.8V784z" fill="#4A555F" p-id="2698"></path>
+                        <path d="M375.6 514.4l-3.2 4.4-1.2 2-4.4 6.4-66.4 98H78.8V936h306.8V514.4h-10z m-2.8 408.8H92v-284.8h216l64.8-96.4v381.2z" fill="#4A555F" p-id="2699"></path>
+                        <path d="M892.4 514.4H367.2l4 6.4 1.2 2 2.8 4.4 3.2 5.2 6.8 10 62 95.6H972l-79.6-123.6z m-437.6 111.2l-63.6-98h494l62.8 98H454.8z" fill="#4A555F" p-id="2700"></path>
+                        <path d="M463.2 610.4l-44-67.6h458l43.6 67.6z" fill="#E0E0E0" p-id="2701"></path>
+                        <path d="M79.6 514.4L0 638.4h307.6l64.8-96.4 6.4-9.6 3.6-5.2 3.2-4.4 1.2-2 4.4-6.4H79.6z m221.2 111.2H23.6l62.8-98h280.4l-66 98z" fill="#4A555F" p-id="2702"></path>
+                        <path d="M51.6 610.4l43.2-67.6h243.6l-45.6 67.6z" fill="#E0E0E0" p-id="2703"></path>
+                        <path d="M486.4 10c-167.2 0-303.6 136-303.6 303.2 0 74.8 26.8 145.6 76 201.2 3.2 3.6 6.8 7.6 10.4 11.2l2 2h430l2-2c3.6-3.6 6.8-7.2 10.4-11.2 49.2-55.6 76-126.4 76-201.2 0.4-167.2-136-303.2-303.2-303.2zM696 514.4H276.8C224.8 460 196 388.8 196 313.6c0-160 130.4-290.4 290.4-290.4 160 0 290.4 130.4 290.4 290.4 0 75.2-28.8 146.4-80.8 200.8z" fill="#4A555F" p-id="2704"></path>
+                        <path d="M283.6 499.2c-46.8-50.8-72.4-116.4-72.4-186 0-151.6 123.6-275.2 275.2-275.2s275.2 123.6 275.2 275.2c0 69.2-25.6 135.2-72.4 186H283.6z" fill="#FFD552" p-id="2705"></path>
+                        <path d="M486.4 65.6c-136.4 0-247.6 111.2-247.6 247.6 0 79.6 38.8 154.8 103.2 201.2 6 4.4 12 8.4 18.4 12l1.6 0.8h249.6l1.6-0.8c6.4-3.6 12.4-7.6 18.4-12 64-46.4 103.2-121.6 103.2-201.2-0.8-136.4-111.6-247.6-248.4-247.6z m121.2 448.8H365.2C295.2 472 251.6 395.2 251.6 313.6c0-129.6 105.2-234.8 234.8-234.8 129.2 0 234.8 105.2 234.8 234.8 0 81.6-43.6 158.4-113.6 200.8z" fill="#4A555F" p-id="2706"></path>
+                        <path d="M482.8 172.4h12.8v38.8h-12.8z" fill="#4A555F" p-id="2707"></path>
+                        <path d="M490 297.6h-67.2V204.8h67.2c25.6 0 46.4 20.8 46.4 46.4 0.4 25.6-20.8 46.4-46.4 46.4z m-54.4-12.8h54.4c18.4 0 33.6-15.2 33.6-33.6 0-18.4-15.2-33.6-33.6-33.6h-54.4v67.2z" fill="#4A555F" p-id="2708"></path>
+                        <path d="M518.8 395.6h-96V284.8h96c29.2 0 52.8 23.6 52.8 52.8v5.2c0 29.2-23.6 52.8-52.8 52.8z m-83.2-12.8h83.2c22 0 40-18 40-40v-5.2c0-22-18-40-40-40h-83.2v85.2zM440.8 172.4h12.8v38.8h-12.8z" fill="#4A555F" p-id="2709"></path>
+                        <path d="M440.8 389.2h12.8v38.8h-12.8zM482.8 389.2h12.8v38.8h-12.8zM878.4 1014c-80.4 0-145.6-51.6-145.6-115.2 0-17.6 5.2-35.2 15.2-51.2l-34.4-84.8 105.6 30.8c18.8-6.8 38.8-10 59.6-10 80.4 0 145.6 51.6 145.6 115.2s-65.6 115.2-146 115.2z m-143.2-230.8l27.2 66-2 2.8c-10 14.4-14.8 30.4-14.8 46.8 0 56.4 59.6 102 132.8 102s132.8-45.6 132.8-102-59.6-102-132.8-102c-20 0-39.2 3.2-57.2 10l-2 0.8-84-24.4z" fill="#4A555F" p-id="2710"></path>
+                        <path d="M878.4 986c-64.8 0-117.6-39.2-117.6-86.8 0-13.2 4-26.4 12.4-38.4l6.4-9.6-18.4-44.8 58.4 17.2 6.8-2.4c16.4-6 33.6-9.2 52-9.2 64.8 0 117.6 39.2 117.6 86.8s-52.8 87.2-117.6 87.2z" fill="#FFD552" p-id="2711"></path>
+                        <path d="M809.6 865.6h12.8V932h-12.8zM893.6 931.6h-25.2c-12.8 0-22.8-10.4-22.8-22.8v-19.6c0-12.8 10.4-22.8 22.8-22.8h25.2v12.8h-25.2c-5.6 0-10 4.4-10 10v19.6c0 5.6 4.4 10 10 10h25.2v12.8zM932.8 931.6h-3.6c-12.8 0-22.8-10.4-22.8-22.8v-19.6c0-12.8 10.4-22.8 22.8-22.8h3.6v12.8h-3.6c-5.6 0-10 4.4-10 10v19.6c0 5.6 4.4 10 10 10h3.6v12.8z" fill="#4A555F" p-id="2712"></path>
+                        <path d="M938 931.6h-8v-12.8h8c5.6 0 10-4.4 10-10v-19.6c0-5.6-4.4-10-10-10h-8v-12.8h8c12.8 0 22.8 10.4 22.8 22.8v19.6c0 12.4-10 22.8-22.8 22.8z" fill="#4A555F" p-id="2713"></path>
+                        <path d="M867.2 653.6H439.6l-38.8-59.6v145.6h466.4z" fill="#F68F6F" p-id="2714"></path>
+                        <path d="M718 908.4c-0.4-3.2-0.4-6.4-0.4-9.2 0-18 4.8-36 13.6-52.4L687.6 740l131.2 38.4c15.6-5.2 32-8 48.8-9.2v-29.6H400.8v168.8h317.2z" fill="#E0E0E0" p-id="2715"></path>
+                        <path d="M357.6 591.6L316 653.6H107.2v86h250.4z" fill="#F68F6F" p-id="2716"></path>
+                        <path d="M107.2 739.6h250.4v168.8H107.2z" fill="#E0E0E0" p-id="2717"></path>
+                      </svg>
+                    </div>
+                    <span className="ai-label">AI助手</span>
+                  </div>
+                  <div className="ai-content">{m.content}</div>
+                </div>
               )}
             </React.Fragment>
           )
