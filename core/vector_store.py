@@ -6,6 +6,7 @@ import ollama
 import torch
 
 from config.database import get_db_connection
+from config.models import model_config
 
 
 class VectorStore:
@@ -96,6 +97,90 @@ class VectorStore:
         finally:
             cursor.close()
             conn.close()
+
+    def search_lexical_trgm(self, query: str, limit: int = 50) -> List[Dict]:
+        """使用 trigram 相似度做词法检索（需要 pg_trgm 扩展）。
+        如扩展不可用，可回退到 ILIKE。
+        """
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, content, file_name, chunk_index, file_type,
+                           similarity(content, %s) AS sim
+                    FROM document_chunks
+                    WHERE content % %s
+                    ORDER BY sim DESC
+                    LIMIT %s
+                    """,
+                    (query, query, limit),
+                )
+                rows = cursor.fetchall()
+                return [dict(r) for r in rows]
+            except Exception:
+                # fallback to ILIKE
+                pattern = f"%{query}%"
+                cursor.execute(
+                    """
+                    SELECT id, content, file_name, chunk_index, file_type
+                    FROM document_chunks
+                    WHERE content ILIKE %s
+                    ORDER BY chunk_index
+                    LIMIT %s
+                    """,
+                    (pattern, limit),
+                )
+                rows = cursor.fetchall()
+                return [dict(r) for r in rows]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def hybrid_search(self, query: str, query_embedding: List[float], top_k: int = 3,
+                       alpha: float = 0.6, relevance_threshold: float | None = None) -> tuple[List[Dict], bool]:
+        """混合检索：融合向量与词法相似度，返回 (候选列表, has_strong_vec)。
+        - has_strong_vec: 是否存在距离<=阈值的向量候选，用于兜底判定。
+        """
+        vec = self.search_similar(query_embedding, max(10, top_k))
+        lex = self.search_lexical_trgm(query, max(20, top_k * 3))
+
+        def normalize(vals: List[float]) -> List[float]:
+            if not vals:
+                return []
+            vmin, vmax = min(vals), max(vals)
+            if vmax - vmin < 1e-9:
+                return [1.0 for _ in vals]
+            return [(v - vmin) / (vmax - vmin) for v in vals]
+
+        vec_ids = [c.get('id') for c in vec]
+        vec_sims = normalize([max(0.0, 1.0 - float(c.get('distance') or 1.0)) for c in vec])
+        vec_map = { cid: (sim, c) for cid, sim, c in zip(vec_ids, vec_sims, vec) }
+
+        lex_ids = [c.get('id') for c in lex]
+        lex_sims = normalize([float(c.get('sim') or 0.0) for c in lex]) if lex and 'sim' in lex[0] else [1.0 for _ in lex]
+        lex_map = { cid: (sim, c) for cid, sim, c in zip(lex_ids, lex_sims, lex) }
+
+        fused: List[Dict] = []
+        seen = set()
+        for cid, (vs, vc) in vec_map.items():
+            ls = lex_map.get(cid, (0.0, None))[0]
+            score = alpha * vs + (1 - alpha) * ls
+            fused.append({ **vc, 'score': score })
+            seen.add(cid)
+        for cid, (ls, lc) in lex_map.items():
+            if cid in seen:
+                continue
+            score = alpha * 0.0 + (1 - alpha) * ls
+            fused.append({ **lc, 'score': score })
+
+        fused.sort(key=lambda r: r['score'], reverse=True)
+
+        # 距离阈值兜底
+        thr = relevance_threshold if relevance_threshold is not None else model_config.max_context_distance
+        has_strong_vec = any((c.get('distance') is not None and float(c['distance']) <= thr) for c in vec)
+        return fused, has_strong_vec
     
     def get_all_chunks(self) -> List[Dict]:
         """获取所有文档块（用于兼容性）"""

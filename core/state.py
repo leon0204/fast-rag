@@ -1,7 +1,7 @@
 import logging
 import os
 import io
-from typing import List, Dict, Optional, Iterator
+from typing import List, Dict, Optional, Iterator, Any
 
 import torch
 import ollama
@@ -9,11 +9,13 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 
 from core.vector_store import vector_store
+from core.model_client import get_global_model_client, ModelClientFactory
 from config.database import init_database, get_chunk_count
+from config.models import model_config
 
 
-# DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:latest")  # 可使用更小的模型
+# 使用配置中的模型
+DEFAULT_MODEL = model_config.ollama.model if model_config.current_model_type == "ollama" else model_config.deepseek.model
 
 
 # vector_store
@@ -30,24 +32,25 @@ def get_relevant_context(rewritten_input: str, top_k: int = 3) -> List[str]:
         input_embedding = app_state.query_embedding_cache[rewritten_input]
         print(f"📊 使用缓存的向量嵌入")
     else:
-        resp = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)
-        # 确保向量是浮点数列表
-        input_embedding = [float(x) for x in resp["embedding"]]
+        # 使用模型客户端生成嵌入
+        input_embedding = get_global_model_client().embeddings(rewritten_input)
         app_state.query_embedding_cache[rewritten_input] = input_embedding
         print(f"📊 生成新的向量嵌入并缓存")
     
     embedding_time = time.time() - embedding_start
     print(f"📊 向量嵌入处理耗时: {embedding_time:.2f}秒")
     
-    # 测量向量检索时间
-    retrieval_start = time.time()
-    similar_chunks = vector_store.search_similar(input_embedding, top_k)
-    retrieval_time = time.time() - retrieval_start
-    print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
-    
-    result = [chunk['content'].strip() for chunk in similar_chunks]
-    print(f"检索完成，找到 {len(result)} 个相关片段")
-    return result
+    # 混合检索由 vector_store 统一实现与维护（包含阈值兜底判定）
+    fused, has_strong_vec = vector_store.hybrid_search(
+        rewritten_input, input_embedding, top_k=max(10, top_k), alpha=0.6,
+        relevance_threshold=model_config.max_context_distance
+    )
+    if not has_strong_vec:
+        print("未通过向量距离阈值，跳过私域上下文注入")
+        return []
+    selected = [r.get('content', '').strip() for r in fused[:top_k] if r.get('content')]
+    print(f"融合后选出 {len(selected)} 个片段用于注入")
+    return selected
 
 
 def rewrite_query(user_input: str, conversation_history: List[Dict[str, str]], client: OpenAI, model: str) -> str:
@@ -149,7 +152,7 @@ def rewrite_query_stream(user_input: str, conversation_history: List[Dict[str, s
 #
 
 def rag_chat_stream(user_input: str, system_message: str, conversation_history: List[Dict[str, str]],
-                    client: OpenAI, model: str) -> Iterator[str]:
+                     model: str) -> Iterator[str]:
     """Yield assistant content chunks as they stream in, and update history when done."""
     import time
     start_time = time.time()
@@ -214,7 +217,7 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
     print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
     # 合并上下文并做硬阈值裁剪，避免不同查询因为上下文长度大幅度放大推理时延
     context_str = "\n".join(relevant_context) if relevant_context else ""
-    MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS", "1200"))
+    MAX_CONTEXT_CHARS = model_config.max_context_chars
     if len(context_str) > MAX_CONTEXT_CHARS:
         context_str = context_str[:MAX_CONTEXT_CHARS]
     
@@ -222,7 +225,7 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
         yield f"<think>找到 {len(relevant_context)} 个相关文档片段</think>"
         user_input_with_context = user_input + "\n\nRelevant Context:\n" + context_str
     else:
-        yield "<think>未找到相关上下文信息，将直接回答</think>"
+        yield f"<think>找到 {len(relevant_context)} 个相关文档片段，未找到足够相关的私域上下文，将直接回答</think>"
         user_input_with_context = user_input
     conversation_history[-1]["content"] = user_input_with_context
 
@@ -235,28 +238,23 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
     yield "<think>正在生成AI分析回答...</think>"
     
     generation_start = time.time()
+    model_type_display = model_config.current_model_type.upper()
     if app_state.model_loaded:
-        print(f"🚀 开始调用模型生成... (模型已预加载)")
+        print(f"🚀 开始调用 {model_type_display} 模型生成... (模型已预加载)")
     else:
-        print(f"🚀 开始调用模型生成... (首次加载)")
-    # 通过 extra_body 传递给 Ollama，保持模型常驻并限制上下文
-    stream = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=int(os.environ.get("MAX_GENERATE_TOKENS", "800")),
-        stream=True,
-        extra_body={
-            "keep_alive": "30m",
-            # 根据机器调整，较小的上下文更快；如需更大可提高
-            "options": {
-                "num_ctx": int(os.environ.get("NUM_CTX", "2048")),
-                # 控制生成长度，避免长回答导致耗时上升
-                "num_predict": int(os.environ.get("NUM_PREDICT", "800")),
-                # 合理利用 CPU 线程
-                "num_threads": max(1, __import__('os').cpu_count() or 1)
-            }
-        },
-    )
+        print(f"🚀 开始调用 {model_type_display} 模型生成... (首次加载)")
+    # 使用模型客户端生成回答
+    try:
+        stream = get_global_model_client().chat_completion(
+            messages=messages,
+            stream=True,
+            max_tokens=model_config.max_generate_tokens
+        )
+    except Exception as e:
+        model_type_display = model_config.current_model_type.upper()
+        print(f"❌ {model_type_display} 模型调用失败: {str(e)}")
+        yield f"<error>{model_type_display} 模型调用失败: {str(e)}</error>"
+        return
 
     # 更精确的首 token 延迟与总体耗时
     ttft = None
@@ -282,13 +280,8 @@ class AppState:
         self.histories: Dict[str, List[Dict[str, str]]] = {}
         self.query_embedding_cache: Dict[str, List[float]] = {}  # 缓存查询向量嵌入
         self.model_loaded: bool = False  # 标记模型是否已加载
-        self.system_message: str = (
-            "你是一个智能助手，擅长从给定文本中提取最有用的信息，并结合上下文回答用户问题。\n"
-            "请始终使用中文回答用户的问题，语言要清晰、简洁、专业。\n"
-            "如果用户的问题是中文，你的回答也必须是中文。\n"
-            "如果用户的问题中包含中英文混合，你仍然优先用中文回答。"
-        )
-        self.client: OpenAI = OpenAI(base_url='http://localhost:11434/v1', api_key='llama3')
+        self.system_message: str = model_config.system_message
+        self.model_client = get_global_model_client()  # 使用模型客户端
 
 
 app_state = AppState()
@@ -299,6 +292,19 @@ def initialize_state_on_startup() -> None:
     print("🚀 正在启动 RAG 服务...")
     print("=" * 50)
     
+    # 显示当前模型配置
+    print(f"\n🤖 当前模型配置:")
+    print(f"   模型类型: {model_config.current_model_type.upper()}")
+    if model_config.current_model_type == "ollama":
+        print(f"   聊天模型: {model_config.ollama.model}")
+        print(f"   嵌入模型: {model_config.ollama.embedding_model}")
+        print(f"   服务地址: {model_config.ollama.base_url}")
+    else:
+        print(f"   聊天模型: {model_config.deepseek.model}")
+        print(f"   嵌入模型: {model_config.ollama.embedding_model} (备选 Ollama)")
+        print(f"   服务地址: {model_config.deepseek.base_url}")
+        print(f"   API Key: {'已配置' if model_config.deepseek.api_key else '未配置'}")
+    
     # 初始化数据库
     print("\n🗄️  初始化数据库...")
     try:
@@ -308,41 +314,25 @@ def initialize_state_on_startup() -> None:
         print(f"❌ 数据库初始化失败: {str(e)}")
         print("   请确保 PostgreSQL 服务正在运行且已安装 pgvector 扩展")
         raise
-    
-    # 预加载模型
-    # print("\n🔥 预加载模型...")
-    # try:
-    #     import time
-    #     warmup_start = time.time()
-        
-    #     # 发送一个简单的请求来预加载模型
-    #     test_response = app_state.client.chat.completions.create(
-    #         model=DEFAULT_MODEL,
-    #         messages=[{"role": "user", "content": "你好"}],
-    #         max_tokens=10,
-    #     )
-        
-    #     warmup_time = time.time() - warmup_start
-    #     print(f"✅ 模型预加载完成，耗时: {warmup_time:.2f}秒")
-    #     print(f"   模型: {DEFAULT_MODEL}")
-    #     print(f"   模型响应测试: {test_response.choices[0].message.content}")
-    #     app_state.model_loaded = True
-        
-    # except Exception as e:
-    #     print(f"❌ 模型预加载失败: {str(e)}")
-    #     print("   请确保 Ollama 服务正在运行")
-    #     raise
-    
+
     # 检查embedding模型
-    print("\n🔍 检查向量嵌入模型...")
+    print(f"\n🔍 检查向量嵌入模型 ({model_config.current_model_type.upper()})...")
     try:
-        test_embedding = ollama.embeddings(model='nomic-embed-text', prompt="test")
-        embedding_dim = len(test_embedding["embedding"])
-        print(f"✅ 向量嵌入模型连接成功 - 模型: nomic-embed-text")
+        test_embedding = get_global_model_client().embeddings("test")
+        embedding_dim = len(test_embedding)
+        if model_config.current_model_type == "ollama":
+            print(f"✅ Ollama 向量嵌入模型连接成功")
+            print(f"   模型: {model_config.ollama.embedding_model}")
+        else:
+            print(f"✅ DeepSeek + Ollama 备选向量嵌入连接成功")
+            print(f"   嵌入模型: {model_config.ollama.embedding_model} (Ollama 备选)")
         print(f"   向量维度: {embedding_dim}")
     except Exception as e:
         print(f"❌ 向量嵌入模型连接失败: {str(e)}")
-        print("   请确保 Ollama 服务正在运行且包含 nomic-embed-text 模型")
+        if model_config.current_model_type == "ollama":
+            print("   请确保 Ollama 服务正在运行且包含 nomic-embed-text 模型")
+        else:
+            print("   请检查 DeepSeek API 配置和 Ollama 备选服务")
         raise
     
     # 检查向量数据库状态
@@ -358,7 +348,7 @@ def initialize_state_on_startup() -> None:
         raise
     
     print("\n" + "=" * 50)
-    print("🎉 RAG 服务启动成功！")
+    print(f"🎉 RAG 服务启动成功！(当前模型: {model_config.current_model_type.upper()})")
     print("=" * 50)
 
 

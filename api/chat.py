@@ -6,6 +6,7 @@ from fastapi import APIRouter, Form
 from fastapi.responses import StreamingResponse
 
 from core.state import app_state, rag_chat_stream, DEFAULT_MODEL
+from api.history import save_chat_message, init_history_db
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -40,12 +41,12 @@ async def chat_stream(query: str = Form(...), session_id: Optional[str] = Form(N
 
     def sse_event_generator() -> Iterable[str]:
         first_chunk_ts: Optional[float] = None
+        final_answer = ""
         print(f"开始调用 rag_chat_stream...{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         for chunk in rag_chat_stream(
             user_input=query,
             system_message=app_state.system_message,
             conversation_history=app_state.histories[sid],
-            client=app_state.client,
             model=(model or DEFAULT_MODEL),
         ):
             if first_chunk_ts is None:
@@ -88,13 +89,31 @@ async def chat_stream(query: str = Form(...), session_id: Optional[str] = Form(N
                 processed_chunk = chunk.replace('\n', '[NEWLINE]').replace('\r', '[NEWLINE]')
                 # print(f"处理换行符后的chunk: {repr(processed_chunk)}")
             
+            # 收集AI回复内容（排除思考内容）
+            if not chunk.startswith('<think>') and not chunk.startswith('<error>'):
+                final_answer += chunk
+            
             # 发送chunk给前端
             sse_data = f"data: {processed_chunk}\n\n"
             # print(f"发送SSE数据: {repr(sse_data)}")
             yield sse_data
             
         yield "data: [DONE]\n\n"
+        
+        # 更新内存中的会话历史
+        app_state.histories[sid].append({"role": "user", "content": query})
+        app_state.histories[sid].append({"role": "assistant", "content": final_answer})
+        
         print(f"流式响应完成，最终会话历史长度: {len(app_state.histories[sid])}")
+        
+        # 保存聊天记录到历史数据库
+        try:
+            # 保存用户消息
+            save_chat_message(sid, "user", query)
+            # 保存AI回复
+            save_chat_message(sid, "assistant", final_answer)
+        except Exception as e:
+            print(f"保存聊天记录失败: {str(e)}")
 
     return StreamingResponse(
         sse_event_generator(),

@@ -30,6 +30,8 @@ def init_database():
     try:
         # 创建pgvector扩展
         cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        # 创建 trigram 扩展（用于 BM25 替代的近似匹配/相似度）
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
         
         # 创建文档块表
         cursor.execute("""
@@ -54,6 +56,29 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_document_chunks_file_name 
             ON document_chunks (file_name);
+        """)
+
+        # 创建 trigram 索引以支持 content 相似度检索
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_document_chunks_content_trgm
+            ON document_chunks USING GIN (content gin_trgm_ops);
+        """)
+
+        # 创建全文检索 tsvector 生成列与 GIN 索引（简单词典，中文可在入库阶段预分词到 content）
+        cursor.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='document_chunks' AND column_name='content_tsv'
+                ) THEN
+                    ALTER TABLE document_chunks 
+                    ADD COLUMN content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED;
+                END IF;
+            END $$;
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_document_chunks_tsv
+            ON document_chunks USING GIN (content_tsv);
         """)
         
         conn.commit()
