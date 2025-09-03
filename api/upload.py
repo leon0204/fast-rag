@@ -54,8 +54,8 @@ def normalize_and_chunk_text(raw_text: str, max_chunk_size: int = 1000) -> List[
     return chunks
 
 
-@router.post("")
-async def upload(files: List[UploadFile] = File(...)):
+@router.post("/simple")
+async def upload_simple(files: List[UploadFile] = File(...)):
     """上传文件并写入向量库：解析文本→正则分块→生成向量→入pgvector"""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -101,5 +101,46 @@ async def upload(files: List[UploadFile] = File(...)):
                 total_added += added_count
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"存储文件失败: {str(e)}")
+
+    return {"added": total_added}
+
+
+@router.post("/docling")
+async def upload_docling(files: List[UploadFile] = File(...)):
+    """使用 Docling export_to_text 解析多种文档并入库。
+    保留原 /upload/simple 作为简易文本路径。
+    """
+    from core.document_ingest import ingest_bytes
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    total_added = 0
+    for f in files:
+        data = await f.read()
+        name_lower = (f.filename or "").lower()
+        file_type = "unknown"
+        if name_lower.endswith(".pdf"):
+            file_type = "pdf"
+        elif name_lower.endswith((".docx", ".doc")):
+            file_type = "docx"
+        elif name_lower.endswith((".pptx", ".ppt")):
+            file_type = "pptx"
+        elif name_lower.endswith((".png", ".jpg", ".jpeg", ".tiff", ".bmp")):
+            file_type = "image"
+        elif name_lower.endswith((".html", ".htm")):
+            file_type = "html"
+        elif name_lower.endswith((".md", ".markdown")):
+            file_type = "markdown"
+        elif name_lower.endswith((".adoc", ".asciidoc")):
+            file_type = "asciidoc"
+        else:
+            file_type = "text"
+
+        try:
+            added = ingest_bytes(data, f.filename or "unknown", file_type=file_type)
+            total_added += added
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Docling 解析或入库失败: {str(e)}")
 
     return {"added": total_added}
