@@ -1,5 +1,6 @@
 # Fast RAG
-
+![img_4.png](img_4.png)
+![img_6.png](img_6.png)
 [中文](README.zh-CN.md) | English
 
 > Local, privacy-first RAG using PostgreSQL + pgvector and Ollama. Streams responses via SSE. Simple, fast, hackable.

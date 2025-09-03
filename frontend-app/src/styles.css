@@ -24,12 +24,22 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe U
 /* 历史记录项样式 */
 .history-item-container {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item-row {
+  display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.history-item-container.has-questions {
+  padding-bottom: 6px;
+}
+
 .history-item {
-  flex: 1;
+  width: 100%;
   text-align: left;
   border: 1px solid #bfdbfe;
   background: #f0f9ff;
@@ -38,6 +48,43 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe U
   cursor: pointer;
   color: #0b1324;
   transition: all 0.2s ease;
+}
+
+.history-item.highlight {
+  box-shadow: 0 0 0 2px #fde68a inset;
+  background: #fffbeb;
+}
+
+/* 展开的问题列表：纵向堆叠，左侧对齐 */
+.history-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;              /* 更紧凑的行距 */
+  padding-left: 12px;    /* 与会话卡片保持缩进 */
+  max-width: 94%;        /* 比会话卡片稍窄 */
+}
+
+.history-question {
+  text-align: left;
+  border: 1px dashed #bfdbfe;
+  background: #f8fbff;
+  border-radius: 8px;
+  padding: 4px 10px;     /* 进一步压缩上下高度 */
+  cursor: pointer;
+  color: #0b1324;
+  width: 100%;
+}
+
+/* 展开列表的文本更紧凑，整体高度更矮 */
+.history-question .history-item-content { line-height: 1.3; }
+.history-question .history-title { font-size: 13px; }
+.history-question .history-meta { margin-top: 2px; font-size: 11px; }
+
+.history-questions.loading {
+  padding-left: 12px;
+  color: #64748b;
+  font-size: 12px;
+  max-width: 94%;
 }
 
 .history-item:hover {

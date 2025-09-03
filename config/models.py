@@ -48,8 +48,8 @@ class DeepSeekConfig:
 @dataclass
 class ModelConfig:
     """模型配置主类"""
-    # 当前使用的模型类型: "ollama" 或 "deepseek"
-    current_model_type: str = "ollama"
+    # 当前使用的模型类型: "ollama" 或 "deepseek" 可切换变量
+    current_model_type: str = "deepseek"
     
     # 模型配置
     ollama: OllamaConfig = None
@@ -67,6 +67,8 @@ class ModelConfig:
     top_k: int = 2
     max_context_chars: int = 1200
     max_generate_tokens: int = 800
+    # 当使用向量检索时的最大可接受距离（越小越相似，基于 cosine distance）
+    max_context_distance: float = 0.40
     
     def __post_init__(self):
         if self.ollama is None:
@@ -79,8 +81,8 @@ def load_model_config() -> ModelConfig:
     """从环境变量和配置文件加载模型配置"""
     config = ModelConfig()
     
-    # 从环境变量加载配置
-    config.current_model_type = os.environ.get("MODEL_TYPE", "ollama")
+    # 从环境变量加载配置（默认沿用类默认值）
+    config.current_model_type = os.environ.get("MODEL_TYPE", config.current_model_type)
     
     # Ollama 配置
     config.ollama.base_url = os.environ.get("OLLAMA_BASE_URL", config.ollama.base_url)
@@ -103,6 +105,10 @@ def load_model_config() -> ModelConfig:
     config.top_k = int(os.environ.get("TOP_K", config.top_k))
     config.max_context_chars = int(os.environ.get("MAX_CONTEXT_CHARS", config.max_context_chars))
     config.max_generate_tokens = int(os.environ.get("MAX_GENERATE_TOKENS", config.max_generate_tokens))
+    try:
+        config.max_context_distance = float(os.environ.get("MAX_CONTEXT_DISTANCE", config.max_context_distance))
+    except Exception:
+        pass
     
     # 系统消息
     system_msg = os.environ.get("SYSTEM_MESSAGE")

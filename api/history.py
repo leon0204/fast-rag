@@ -1,108 +1,100 @@
 from typing import List, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
-import sqlite3
-import os
 from datetime import datetime
 import json
 
+from config.database import get_db_connection
+
 router = APIRouter(prefix="/history", tags=["history"])
 
-# 数据库文件路径
-HISTORY_DB_PATH = "chat_history.db"
-
 def init_history_db():
-    """初始化历史记录数据库"""
-    conn = sqlite3.connect(HISTORY_DB_PATH)
-    cursor = conn.cursor()
-    
-    # 创建聊天会话表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_sessions (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            message_count INTEGER DEFAULT 0
-        )
-    ''')
-    
-    # 创建聊天消息表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            role TEXT CHECK(role IN ('user', 'assistant')),
-            content TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES chat_sessions (id)
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_id ON chat_messages (session_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_updated_at ON chat_sessions (updated_at)')
-    
-    conn.commit()
-    conn.close()
-
-def save_chat_message(session_id: str, role: str, content: str):
-    """保存聊天消息到数据库"""
+    """初始化 PostgreSQL 历史记录表"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     try:
-        # 检查会话是否存在，如果不存在则创建
-        cursor.execute('''
-            INSERT OR IGNORE INTO chat_sessions (id, title, created_at, updated_at, message_count)
-            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        ''', (session_id, None))
-        
-        # 插入消息
-        cursor.execute('''
-            INSERT INTO chat_messages (session_id, role, content, timestamp)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (session_id, role, content))
-        
-        # 更新会话的消息数量和最后更新时间
-        cursor.execute('''
-            UPDATE chat_sessions 
-            SET message_count = (
-                SELECT COUNT(*) FROM chat_messages WHERE session_id = ?
-            ), updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (session_id, session_id))
-        
-        # 如果没有标题，使用第一条用户消息作为标题
-        cursor.execute('''
-            SELECT title FROM chat_sessions WHERE id = ?
-        ''', (session_id,))
-        current_title = cursor.fetchone()[0]
-        
-        if not current_title:
-            cursor.execute('''
-                SELECT content FROM chat_messages 
-                WHERE session_id = ? AND role = 'user' 
-                ORDER BY timestamp ASC LIMIT 1
-            ''', (session_id,))
-            first_msg = cursor.fetchone()
-            if first_msg:
-                title = first_msg[0][:50] + "..." if len(first_msg[0]) > 50 else first_msg[0]
-                cursor.execute('''
-                    UPDATE chat_sessions SET title = ? WHERE id = ?
-                ''', (title, session_id))
-        
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                message_count INTEGER DEFAULT 0
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role TEXT CHECK(role IN ('user', 'assistant')),
+                content TEXT,
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages (session_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON chat_sessions (updated_at);")
         conn.commit()
-        
-    except Exception as e:
-        conn.rollback()
-        raise e
     finally:
+        cursor.close()
         conn.close()
 
-def get_db_connection():
-    """获取数据库连接"""
-    return sqlite3.connect(HISTORY_DB_PATH)
+def save_chat_message(session_id: str, role: str, content: str):
+    """保存聊天消息到 PostgreSQL"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            '''
+            INSERT INTO chat_sessions (id, title, created_at, updated_at, message_count)
+            VALUES (%s, %s, NOW(), NOW(), 0)
+            ON CONFLICT (id) DO NOTHING
+            ''',
+            (session_id, None)
+        )
+        cursor.execute(
+            '''
+            INSERT INTO chat_messages (session_id, role, content, timestamp)
+            VALUES (%s, %s, %s, NOW())
+            ''',
+            (session_id, role, content)
+        )
+        cursor.execute(
+            '''
+            UPDATE chat_sessions
+            SET message_count = (SELECT COUNT(*) FROM chat_messages WHERE session_id = %s),
+                updated_at = NOW()
+            WHERE id = %s
+            ''',
+            (session_id, session_id)
+        )
+        cursor.execute('SELECT title FROM chat_sessions WHERE id = %s', (session_id,))
+        row = cursor.fetchone()
+        current_title = row[0] if row else None
+        if not current_title:
+            cursor.execute(
+                '''
+                SELECT content FROM chat_messages WHERE session_id = %s AND role = 'user' 
+                ORDER BY timestamp ASC LIMIT 1
+                ''',
+                (session_id,)
+            )
+            first_msg = cursor.fetchone()
+            if first_msg:
+                title = first_msg[0][:50] + '...' if len(first_msg[0]) > 50 else first_msg[0]
+                cursor.execute('UPDATE chat_sessions SET title = %s WHERE id = %s', (title, session_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+ 
 
 @router.on_event("startup")
 async def startup_event():
@@ -126,9 +118,9 @@ async def get_chat_history(
                 SELECT DISTINCT cs.id, cs.title, cs.updated_at, cs.message_count
                 FROM chat_sessions cs
                 JOIN chat_messages cm ON cs.id = cm.session_id
-                WHERE cs.title LIKE ? OR cm.content LIKE ?
+                WHERE cs.title LIKE %s OR cm.content LIKE %s
                 ORDER BY cs.updated_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             '''
             search_param = f"%{query}%"
             cursor.execute(sql, (search_param, search_param, limit, offset))
@@ -137,7 +129,7 @@ async def get_chat_history(
                 SELECT id, title, updated_at, message_count
                 FROM chat_sessions
                 ORDER BY updated_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             '''
             cursor.execute(sql, (limit, offset))
         
@@ -165,6 +157,7 @@ async def get_chat_history(
                 "message_count": message_count
             })
         
+        cursor.close()
         conn.close()
         return history_list
         
@@ -186,7 +179,7 @@ async def get_session_messages(
         cursor.execute('''
             SELECT id, title, created_at, updated_at, message_count
             FROM chat_sessions
-            WHERE id = ?
+            WHERE id = %s
         ''', (session_id,))
         
         session = cursor.fetchone()
@@ -197,9 +190,9 @@ async def get_session_messages(
         cursor.execute('''
             SELECT role, content, timestamp
             FROM chat_messages
-            WHERE session_id = ?
+            WHERE session_id = %s
             ORDER BY timestamp ASC
-            LIMIT ? OFFSET ?
+            LIMIT %s OFFSET %s
         ''', (session_id, limit, offset))
         
         messages = []
@@ -211,6 +204,7 @@ async def get_session_messages(
                 "timestamp": timestamp
             })
         
+        cursor.close()
         conn.close()
         
         return {
@@ -236,15 +230,11 @@ async def delete_session(session_id: str) -> Dict:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 删除会话消息
-        cursor.execute('DELETE FROM chat_messages WHERE session_id = ?', (session_id,))
-        
-        # 删除会话
-        cursor.execute('DELETE FROM chat_sessions WHERE id = ?', (session_id,))
-        
+        # 删除会话（级联删除消息）
+        cursor.execute('DELETE FROM chat_sessions WHERE id = %s', (session_id,))
         deleted_count = cursor.rowcount
-        
         conn.commit()
+        cursor.close()
         conn.close()
         
         if deleted_count == 0:
@@ -267,15 +257,15 @@ async def clear_all_history() -> Dict:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 删除所有消息
-        cursor.execute('DELETE FROM chat_messages')
-        message_count = cursor.rowcount
-        
-        # 删除所有会话
+        # 删除所有会话（将级联删除消息）
         cursor.execute('DELETE FROM chat_sessions')
         session_count = cursor.rowcount
-        
         conn.commit()
+        
+        # 消息删除数量在级联下不易直接统计，返回 0 或省略
+        message_count = 0
+        
+        cursor.close()
         conn.close()
         
         return {
@@ -303,17 +293,18 @@ async def get_history_stats() -> Dict:
         total_messages = cursor.fetchone()[0]
         
         # 用户消息数
-        cursor.execute('SELECT COUNT(*) FROM chat_messages WHERE role = "user"')
+        cursor.execute("SELECT COUNT(*) FROM chat_messages WHERE role = 'user'")
         user_messages = cursor.fetchone()[0]
         
         # AI消息数
-        cursor.execute('SELECT COUNT(*) FROM chat_messages WHERE role = "assistant"')
+        cursor.execute("SELECT COUNT(*) FROM chat_messages WHERE role = 'assistant'")
         ai_messages = cursor.fetchone()[0]
         
         # 最近活跃时间
         cursor.execute('SELECT MAX(updated_at) FROM chat_sessions')
         last_activity = cursor.fetchone()[0]
         
+        cursor.close()
         conn.close()
         
         return {
@@ -326,3 +317,6 @@ async def get_history_stats() -> Dict:
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
+
+
+ 

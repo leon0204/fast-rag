@@ -40,15 +40,17 @@ def get_relevant_context(rewritten_input: str, top_k: int = 3) -> List[str]:
     embedding_time = time.time() - embedding_start
     print(f"📊 向量嵌入处理耗时: {embedding_time:.2f}秒")
     
-    # 测量向量检索时间
-    retrieval_start = time.time()
-    similar_chunks = vector_store.search_similar(input_embedding, top_k)
-    retrieval_time = time.time() - retrieval_start
-    print(f"🔍 向量检索耗时: {retrieval_time:.2f}秒")
-    
-    result = [chunk['content'].strip() for chunk in similar_chunks]
-    print(f"检索完成，找到 {len(result)} 个相关片段")
-    return result
+    # 混合检索由 vector_store 统一实现与维护（包含阈值兜底判定）
+    fused, has_strong_vec = vector_store.hybrid_search(
+        rewritten_input, input_embedding, top_k=max(10, top_k), alpha=0.6,
+        relevance_threshold=model_config.max_context_distance
+    )
+    if not has_strong_vec:
+        print("未通过向量距离阈值，跳过私域上下文注入")
+        return []
+    selected = [r.get('content', '').strip() for r in fused[:top_k] if r.get('content')]
+    print(f"融合后选出 {len(selected)} 个片段用于注入")
+    return selected
 
 
 def rewrite_query(user_input: str, conversation_history: List[Dict[str, str]], client: OpenAI, model: str) -> str:
@@ -223,7 +225,7 @@ def rag_chat_stream(user_input: str, system_message: str, conversation_history: 
         yield f"<think>找到 {len(relevant_context)} 个相关文档片段</think>"
         user_input_with_context = user_input + "\n\nRelevant Context:\n" + context_str
     else:
-        yield "<think>未找到相关上下文信息，将直接回答</think>"
+        yield f"<think>找到 {len(relevant_context)} 个相关文档片段，未找到足够相关的私域上下文，将直接回答</think>"
         user_input_with_context = user_input
     conversation_history[-1]["content"] = user_input_with_context
 
@@ -312,31 +314,7 @@ def initialize_state_on_startup() -> None:
         print(f"❌ 数据库初始化失败: {str(e)}")
         print("   请确保 PostgreSQL 服务正在运行且已安装 pgvector 扩展")
         raise
-    
-    # 预加载模型
-    # print("\n🔥 预加载模型...")
-    # try:
-    #     import time
-    #     warmup_start = time.time()
-        
-    #     # 发送一个简单的请求来预加载模型
-    #     test_response = app_state.client.chat.completions.create(
-    #         model=DEFAULT_MODEL,
-    #         messages=[{"role": "user", "content": "你好"}],
-    #         max_tokens=10,
-    #     )
-        
-    #     warmup_time = time.time() - warmup_start
-    #     print(f"✅ 模型预加载完成，耗时: {warmup_time:.2f}秒")
-    #     print(f"   模型: {DEFAULT_MODEL}")
-    #     print(f"   模型响应测试: {test_response.choices[0].message.content}")
-    #     app_state.model_loaded = True
-        
-    # except Exception as e:
-    #     print(f"❌ 模型预加载失败: {str(e)}")
-    #     print("   请确保 Ollama 服务正在运行")
-    #     raise
-    
+
     # 检查embedding模型
     print(f"\n🔍 检查向量嵌入模型 ({model_config.current_model_type.upper()})...")
     try:

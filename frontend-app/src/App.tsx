@@ -10,20 +10,22 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
-  const [expandedThoughts, setExpandedThoughts] = useState<Set<number>>(new Set())
+  const [expandedThoughts, _setExpandedThoughts] = useState<Set<number>>(new Set())
   type HistoryItem = { 
     id: string; 
     title: string; 
-    updatedAt: number;
+    updatedAt?: number;
     message_count?: number;
     updated_at?: string;
   }
   const [histories, setHistories] = useState<HistoryItem[]>([])
+  const [highlightedSessions, setHighlightedSessions] = useState<Set<string>>(new Set())
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
   
+  
   // 模型切换相关状态
-  const [currentModel, setCurrentModel] = useState('Ollama')
+  const [currentModel, setCurrentModel] = useState('')
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [modelSwitchMessage, setModelSwitchMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
   
@@ -100,6 +102,20 @@ export default function App() {
       if (resp.ok) {
         const data = await resp.json()
         const list: HistoryItem[] = Array.isArray(data) ? data : (data?.items ?? [])
+        // 计算变化的会话（新会话或更新时间/消息数变化）
+        const prevMap = new Map(histories.map(h => [h.id, h]))
+        const changed = new Set<string>()
+        for (const h of list) {
+          const prev = prevMap.get(h.id)
+          if (!prev || prev.message_count !== h.message_count || (prev.updated_at || prev.updatedAt) !== (h.updated_at || h.updatedAt)) {
+            changed.add(h.id)
+          }
+        }
+        if (changed.size > 0) {
+          setHighlightedSessions(changed)
+          // 3 秒后自动清除高亮
+          setTimeout(() => setHighlightedSessions(new Set()), 3000)
+        }
         setHistories(list)
       }
     } catch (_) {
@@ -109,29 +125,62 @@ export default function App() {
     }
   }
 
+  // 获取指定会话的消息（仅用户提问）
+  type Question = { content: string; timestamp?: string }
+  type SessionMessages = { [sessionId: string]: Question[] }
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+  const [sessionQuestions, setSessionQuestions] = useState<SessionMessages>({})
+
+  async function fetchSessionQuestions(sessionId: string) {
+    if (!API_BASE) return
+    try {
+      const resp = await fetch(`${API_BASE}/history/session/${sessionId}?limit=200&offset=0`)
+      if (resp.ok) {
+        const data = await resp.json()
+        const qs: Question[] = (data?.messages || [])
+          .filter((m: any) => m.role === 'user')
+          .map((m: any) => ({ content: m.content, timestamp: m.timestamp }))
+        setSessionQuestions(prev => ({ ...prev, [sessionId]: qs }))
+      }
+    } catch (_) {}
+  }
+
   // 删除历史记录
   async function deleteHistory(sessionId: string) {
     if (!API_BASE) return
     try {
-      const resp = await fetch(`${API_BASE}/history/session/${sessionId}`, {
-        method: 'DELETE'
-      })
+      const resp = await fetch(`${API_BASE}/history/session/${sessionId}`, { method: 'DELETE' })
       if (resp.ok) {
-        // 从列表中移除
         setHistories(prev => prev.filter(h => h.id !== sessionId))
-        // 如果删除的是当前会话，清空消息
-        if (sessionId === sessionId) {
-          setMessages([])
-          const newId = Math.random().toString(36).slice(2, 8)
-          setSessionId(newId)
-        }
       }
-    } catch (error) {
-      console.error('删除历史记录失败:', error)
-    }
+    } catch (_) {}
   }
 
   useEffect(() => { fetchHistories('') }, [])
+
+  // 初始化读取当前模型
+  useEffect(() => {
+    async function loadModel() {
+      if (!API_BASE) return
+      try {
+        const resp = await fetch(`${API_BASE}/manage/model/config`)
+        if (resp.ok) {
+          const data = await resp.json()
+          const t = (data?.current_model_type || '').toLowerCase()
+          setCurrentModel(t === 'deepseek' ? 'DeepSeek' : 'Ollama')
+        }
+      } catch (_) {}
+    }
+    loadModel()
+  }, [])
+
+  // 每分钟自动刷新一次历史会话列表
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchHistories(historyQuery)
+    }, 60_000)
+    return () => clearInterval(timer)
+  }, [historyQuery])
 
   // 点击外部区域关闭模型选择器
   useEffect(() => {
@@ -318,7 +367,8 @@ export default function App() {
             placeholder="搜索历史..."
           />
         </div>
-        <button className="new-chat" onClick={() => {
+        
+        <button className="new-chat" style={{ display: 'none' }} onClick={() => {
           const newId = Math.random().toString(36).slice(2, 8)
           setSessionId(newId)
           setMessages([])
@@ -326,34 +376,60 @@ export default function App() {
         <div className="history">
           {historyLoading && <div className="history-loading">加载中...</div>}
           {!historyLoading && histories.map(h => (
-              <div key={h.id} className="history-item-container">
+            <div key={h.id} className={`history-item-container${expandedSessions.has(h.id) ? ' has-questions' : ''}`}>
+              <div className="history-item-row">
                 <button
-                  className={`history-item ${h.id===sessionId ? 'active': ''}`}
-                  onClick={() => { setSessionId(h.id); setMessages([]) }}
+                  className={`history-item ${h.id===sessionId ? 'active': ''} ${highlightedSessions.has(h.id) ? 'highlight' : ''}`}
+                  onClick={() => { setSessionId(h.id) }}
+                  title={h.updated_at ? new Date(h.updated_at).toLocaleString() : (h.updatedAt ? new Date(h.updatedAt).toLocaleString() : '')}
                 >
                   <div className="history-item-content">
                     <div className="history-title">{h.title || h.id}</div>
                     <div className="history-meta">
-                      <span className="message-count">{h.message_count || 0} 条消息</span>
+                      <span
+                        className="message-count"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExpandedSessions(prev => {
+                            const n = new Set(prev)
+                            if (n.has(h.id)) n.delete(h.id); else n.add(h.id)
+                            return n
+                          })
+                          if (!sessionQuestions[h.id]) fetchSessionQuestions(h.id)
+                        }}
+                      >
+                        {h.message_count || 0} 条消息
+                      </span>
                       <span className="update-time">
-                        {h.updated_at ? new Date(h.updated_at).toLocaleString() : 
-                         new Date(h.updatedAt).toLocaleString()}
+                        {h.updated_at ? new Date(h.updated_at).toLocaleString() : (h.updatedAt ? new Date(h.updatedAt).toLocaleString() : '')}
                       </span>
                     </div>
                   </div>
                 </button>
                 <button
                   className="history-delete"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (confirm('确定要删除这个对话吗？')) {
-                      deleteHistory(h.id)
-                    }
-                  }}
+                  onClick={(e) => { e.stopPropagation(); if (confirm('确定要删除这个对话吗？')) deleteHistory(h.id) }}
                   title="删除对话"
-                >
-                  🗑️
-                </button>
+                >🗑️</button>
+              </div>
+              {expandedSessions.has(h.id) && (sessionQuestions[h.id]?.length ? (
+                <div className="history-questions">
+                  {sessionQuestions[h.id].map((q, idx) => (
+                    <button key={idx} className="history-question" onClick={() => setQuery(q.content)} title={q.content}>
+                      <div className="history-item-content">
+                        <div className="history-title">{q.content}</div>
+                        {q.timestamp && (
+                          <div className="history-meta" style={{ marginTop: 4 }}>
+                            <span className="update-time">{new Date(q.timestamp).toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : expandedSessions.has(h.id) ? (
+                <div className="history-questions loading">加载中...</div>
+              ) : null)}
               </div>
           ))}
         </div>
@@ -435,7 +511,7 @@ export default function App() {
                 <div className="message assistant">
                   <div className="ai-message-header">
                     <div className="ai-logo">
-                      <svg width="16" height="16" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2697" xmlns:xlink="http://www.w3.org/1999/xlink">
+                      <svg width="16" height="16" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2697" xmlnsXlink="http://www.w3.org/1999/xlink">
                         <path d="M454.8 625.6l-63.6-98-4-6.4-1.2-2-2.8-4.4h-10v422h381.6l-3.2-8.8c-3.6-9.2-5.2-18.8-5.2-28.8 0-16.4 4.8-32 14.8-46.8l2-2.8-27.2-66.4 84 24.4 2-0.8c18-6.8 37.2-10 57.2-10 4 0 7.2 0 10 0.4l6.8 0.4v-172H454.8zM882.4 784h-4c-20.8 0-40.8 3.2-59.6 10l-105.6-30.8 34.4 84.8c-10 15.6-15.2 33.2-15.2 51.2 0 8.4 1.2 16.4 3.2 24.4H385.6v-380.4l62 95.6h434.8V784z" fill="#4A555F" p-id="2698"></path>
                         <path d="M375.6 514.4l-3.2 4.4-1.2 2-4.4 6.4-66.4 98H78.8V936h306.8V514.4h-10z m-2.8 408.8H92v-284.8h216l64.8-96.4v381.2z" fill="#4A555F" p-id="2699"></path>
                         <path d="M892.4 514.4H367.2l4 6.4 1.2 2 2.8 4.4 3.2 5.2 6.8 10 62 95.6H972l-79.6-123.6z m-437.6 111.2l-63.6-98h494l62.8 98H454.8z" fill="#4A555F" p-id="2700"></path>
