@@ -7,7 +7,6 @@ from api.upload import router as upload_router
 from api.chat import router as chat_router
 from api.manage import router as manage_router
 from api.history import router as history_router
-from api.langgraph_demo import router as langgraph_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +30,6 @@ app.include_router(upload_router)
 app.include_router(chat_router)
 app.include_router(manage_router)
 app.include_router(history_router)
-app.include_router(langgraph_router)
 
 
 @app.get("/health")

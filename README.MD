@@ -18,27 +18,21 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-black"></a>
 </p>
 
-
-![img_4.png](img_4.png)
-![img_6.png](img_6.png)
+![img_6.png](img/img_6.png)
 
 
-![img.png](img.png)
-![img_2.png](img_2.png)
+![img.png](img/img.png)
+![img_2.png](img/img_2.png)
+![img3.png](img/img3.png)
 
 ## Features
 - Process management 【LangGraph】
 - Documents transform core tools 【Docling】、supprt PDF、DOCX、PPTX、Image、HTML、AsciiDoc、Markdown
 - Semantic search with pgvector (768-dim `nomic-embed-text`)
-- Streaming responses via SSE
+- REST + Streaming responses via SSE
 - Optional frontend: React + Vite + TypeScript
 - Local models via Ollama or openai api
-- Fast ingestion: normalize → sentence chunk → batch embed → insert
-- Manage corpus via REST (list, stats, chunks, search, delete)
 
-
-## Architecture
-![img_1.png](img_1.png)
 
 
 ## Table of Contents
