@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import KnowledgeBase from './KnowledgeBase'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -27,7 +28,7 @@ export default function App() {
   // 模型切换相关状态
   const [currentModel, setCurrentModel] = useState('')
   const [showModelSelector, setShowModelSelector] = useState(false)
-  const [modelSwitchMessage, setModelSwitchMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
+  const [_modelSwitchMessage, setModelSwitchMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
   
   // 模型配置
   const models = [
@@ -343,8 +344,37 @@ export default function App() {
     }
   }
 
+  const [activeTab, setActiveTab] = useState<'chat'|'kb'>('chat')
+
+  const TopNav = () => (
+    <div className="topnav">
+      <div className="brand" onClick={() => setActiveTab('chat')}>FastRag</div>
+      <div className="nav-center">
+        <button className={`nav-btn ${activeTab==='chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>
+          <span className="icon">💬</span>
+          <span>聊天</span>
+        </button>
+        <button className={`nav-btn ${activeTab==='kb' ? 'active' : ''}`} onClick={() => setActiveTab('kb')}>
+          <span className="icon">📚</span>
+          <span>知识库</span>
+        </button>
+      </div>
+      <div className="nav-right" />
+    </div>
+  )
+
+  if (activeTab === 'kb') {
+    return (
+      <div className={`app full`}> 
+        <TopNav />
+        <KnowledgeBase />
+      </div>
+    )
+  }
+
   return (
     <div className={`app ${sidebarOpen ? 'with-sidebar' : 'sidebar-collapsed'}`}>
+      <TopNav />
       {!sidebarOpen && (
         <button
           className={`sidebar-toggle closed`}
@@ -424,7 +454,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                    </button>
+                </button>
                   ))}
                 </div>
               ) : expandedSessions.has(h.id) ? (
@@ -435,60 +465,6 @@ export default function App() {
         </div>
       </aside>
       <div className="main">
-        <header className="header">
-          {!sidebarOpen && (
-            <button className="expand" onClick={() => setSidebarOpen(true)} title="展开">☰</button>
-          )}
-          <span>RAG Chat</span>
-          
-          {/* 模型切换提示消息 */}
-          {modelSwitchMessage && (
-            <div className={`model-switch-message ${modelSwitchMessage.type}`}>
-              {modelSwitchMessage.text}
-            </div>
-          )}
-          
-          {/* 模型切换按钮 */}
-          <div className="model-selector">
-            <button 
-              className="model-toggle"
-              onClick={() => setShowModelSelector(!showModelSelector)}
-            >
-              <span className="model-icon">
-                {models.find(m => m.name === currentModel)?.icon || '🤖'}
-              </span>
-              <span className="model-name">{currentModel}</span>
-              <span className="model-arrow">{showModelSelector ? '▲' : '▼'}</span>
-            </button>
-            
-            {showModelSelector && (
-              <div className="model-dropdown">
-                {models.map(model => (
-                  <div 
-                    key={model.id}
-                    className={`model-option ${currentModel === model.name ? 'selected' : ''}`}
-                    onClick={() => {
-                      setShowModelSelector(false)
-                      // 调用后端API切换模型
-                      switchModel(model.id)
-                    }}
-                  >
-                    <div className="model-info">
-                      <span className="model-name">{model.name}</span>
-                      <span className="model-description">{model.description}</span>
-                    </div>
-                    {currentModel === model.name && (
-                      <span className="checkmark">✓</span>
-                    )}
-                  </div>
-                ))}
-                <button className="switch-model-btn">
-                  切换模型回答
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
         <main className="messages" ref={messagesRef}>
         {messages.map((m, i) => {
           if (m.role === 'user') {
@@ -496,7 +472,6 @@ export default function App() {
               <div key={i} className={`message user`}>{m.content}</div>
             )
           }
-          const expanded = expandedThoughts.has(i)
           return (
             <React.Fragment key={i}>
               {m.thought ? (
@@ -544,6 +519,7 @@ export default function App() {
         })}
         </main>
         <div className="composer">
+          {/* 上部分：输入框 */}
           <div className="composer-input">
             <textarea
               rows={1}
@@ -552,9 +528,48 @@ export default function App() {
               placeholder="给 AI 发送消息"
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             />
-            <div className="composer-actions">
-              <button className="send" onClick={send} disabled={loading} title="发送">↗</button>
+          </div>
+          
+          {/* 下部分：操作栏 */}
+          <div className="composer-actions">
+            <div className="model-selector">
+              <button 
+                className="model-toggle"
+                onClick={() => setShowModelSelector(!showModelSelector)}
+              >
+                <span className="model-icon">
+                  {models.find(m => m.name === currentModel)?.icon || '🤖'}
+                </span>
+                <span className="model-name">{currentModel}</span>
+                <span className="model-arrow">{showModelSelector ? '▲' : '▼'}</span>
+              </button>
+              {showModelSelector && (
+                <div className="model-dropdown">
+                  {models.map(model => (
+                    <div 
+                      key={model.id}
+                      className={`model-option ${currentModel === model.name ? 'selected' : ''}`}
+                      onClick={() => {
+                        setShowModelSelector(false)
+                        switchModel(model.id)
+                      }}
+                    >
+                      <div className="model-info">
+                        <span className="model-name">{model.name}</span>
+                        <span className="model-description">{model.description}</span>
+                      </div>
+                      {currentModel === model.name && (
+                        <span className="checkmark">✓</span>
+                      )}
+                    </div>
+                  ))}
+                  <button className="switch-model-btn">
+                    切换模型回答
+                  </button>
+                </div>
+              )}
             </div>
+            <button className="send" onClick={send} disabled={loading} title="发送">↗</button>
           </div>
         </div>
       </div>
