@@ -3,6 +3,44 @@
 .kb-uploaders { display: flex; gap: 12px; }
 .uploader { border: 1px dashed #bfdbfe; padding: 8px 12px; border-radius: 8px; background: #f8fbff; cursor: pointer; }
 .uploader input { display: none; }
+
+/* LangGraph上传按钮样式 */
+.uploader-langgraph {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  transition: all 0.2s ease;
+}
+
+.uploader-langgraph:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+.uploader-langgraph input {
+  display: none;
+}
+
+.upload-icon {
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.upload-text {
+  font-size: 14px;
+  font-weight: 500;
+}
 .kb-search { display: flex; gap: 8px; align-items: center; }
 .kb-search input { border: 1px solid #bfdbfe; border-radius: 8px; padding: 6px 10px; }
 .kb-search .filter { position: relative; }
@@ -83,6 +121,11 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Noto Sans SC, sans-serif; color: #101828; background: #ffffff; }
+/* 全局中文UI字体优先 */
+body, .topnav, .kb-toolbar, .kb-table-header, .kb-table-row, .kb-files-header, .kb-file-row,
+.delete-modal h3, .delete-modal p, .delete-modal-actions button {
+  font-family: "PingFang SC", "SF Pro Display", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+}
 .app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
 .app.full { grid-template-columns: 1fr; }
 .app.full .topnav { grid-column: 1; }
@@ -93,13 +136,32 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe U
 .main { grid-row: 2; }
 .topnav .brand { font-weight: 800; cursor: pointer; }
 .topnav .nav-center { display: flex; gap: 8px; margin: 0 auto; }
-.nav-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #bfdbfe; background: #fff; border-radius: 10px; padding: 6px 10px; cursor: pointer; color: #0b1324; }
-.nav-btn.active { background: #e0f2fe; border-color: #60a5fa; }
-.nav-btn .icon { font-size: 14px; }
+.nav-btn { 
+  display: inline-flex; 
+  align-items: center; 
+  gap: 8px; 
+  padding: 8px 14px; 
+  border: 1px solid transparent; 
+  background: transparent; 
+  border-radius: 22px; 
+  cursor: pointer; 
+  color: #4b5563; /* 灰色未激活 */
+  font-family: "PingFang SC", "SF Pro Display", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+  font-weight: 600;
+  transition: all .15s ease;
+}
+.nav-btn .icon { font-size: 16px; }
+.nav-btn:hover { background: #f3f4f6; }
+.nav-btn.active { 
+  background: #ffffff; 
+  color: #2563eb; /* 激活蓝色 */
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.18);
+  font-weight: 700;
+}
 .kb-entry { margin-left: auto; border: 1px solid #bfdbfe; background: #fff; border-radius: 10px; padding: 6px 10px; cursor: pointer; }
 .model-selector.footer { display: flex; justify-content: center; padding: 12px; border-top: 1px solid #bfdbfe; background: #ffffff; }
 .app.sidebar-collapsed { grid-template-columns: 0 1fr; }
-.sidebar-toggle { position: fixed; top: 16px; left: 16px; z-index: 50; width: 40px; height: 40px; border-radius: 12px; border: 1px solid #bfdbfe; background: #ffffff; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.sidebar-toggle { position: fixed; top: 16px; left: 16px; z-index: 200; width: 40px; height: 40px; border-radius: 12px; border: 1px solid #bfdbfe; background: #ffffff; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .sidebar-toggle .toggle-icon { font-size: 16px; color: #0b1324; }
 .sidebar-toggle .toggle-dot { display: none; }
 .sidebar-toggle .tooltip { position: absolute; left: 48px; top: 50%; transform: translateY(-50%); background: #111827; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 10px rgba(0,0,0,.15); opacity: 0; pointer-events: none; transition: opacity .12s ease; }

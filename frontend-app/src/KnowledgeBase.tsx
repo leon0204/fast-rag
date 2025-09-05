@@ -280,13 +280,9 @@ export default function KnowledgeBase({ onLanggraphTrace, onViewTrace, traceStor
       
       <div className="kb-toolbar">
         <div className="kb-uploaders">
-          <label className="uploader">上传（简单文本）
-            <input type="file" multiple onChange={e => uploadSimple(e.target.files)} />
-          </label>
-          <label className="uploader">上传（Docling 解析）
-            <input type="file" multiple onChange={e => uploadDocling(e.target.files)} />
-          </label>
-          <label className="uploader">上传（LangGraph 轨迹）
+          <label className="uploader-langgraph">
+            <span className="upload-icon">+</span>
+            <span className="upload-text">添加文件</span>
             <input type="file" multiple onChange={e => uploadLangGraph(e.target.files)} />
           </label>
         </div>

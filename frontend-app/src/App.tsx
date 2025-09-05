@@ -180,13 +180,8 @@ export default function App() {
     loadModel()
   }, [])
 
-  // 每分钟自动刷新一次历史会话列表
-  useEffect(() => {
-    const timer = setInterval(() => {
-      fetchHistories(historyQuery)
-    }, 60_000)
-    return () => clearInterval(timer)
-  }, [historyQuery])
+  // 关闭自动轮询历史记录（原每60秒刷新一次）
+  // 如果需要重新开启，可恢复为 setInterval 调用
 
   // 点击外部区域关闭模型选择器
   useEffect(() => {
