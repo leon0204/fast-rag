@@ -1,7 +1,8 @@
 import os
+import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from typing import Optional
+from typing import Optional, List
 import logging
 
 # 数据库配置
@@ -46,6 +47,18 @@ def init_database():
             );
         """)
         
+        # 创建轨迹数据表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS langgraph_traces (
+                id SERIAL PRIMARY KEY,
+                file_name VARCHAR(255) NOT NULL,
+                file_type VARCHAR(50),
+                trace_data JSONB NOT NULL,
+                upload_time TIMESTAMP DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        
         # 创建向量索引（使用HNSW索引提升性能）
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding 
@@ -56,6 +69,17 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_document_chunks_file_name 
             ON document_chunks (file_name);
+        """)
+        
+        # 创建轨迹数据索引
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_langgraph_traces_file_name 
+            ON langgraph_traces (file_name);
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_langgraph_traces_upload_time 
+            ON langgraph_traces (upload_time);
         """)
 
         # 创建 trigram 索引以支持 content 相似度检索
@@ -117,6 +141,112 @@ def clear_all_chunks():
     except Exception as e:
         conn.rollback()
         logging.error(f"清空文档块失败: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def save_trace_data(file_name: str, file_type: str, trace_data: dict) -> int:
+    """保存轨迹数据到数据库"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO langgraph_traces (file_name, file_type, trace_data)
+            VALUES (%s, %s, %s)
+            RETURNING id;
+        """, (file_name, file_type, json.dumps(trace_data)))
+        
+        trace_id = cursor.fetchone()[0]
+        conn.commit()
+        logging.info(f"轨迹数据已保存: {file_name}, ID: {trace_id}")
+        return trace_id
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"保存轨迹数据失败: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_trace_data(file_name: str) -> Optional[dict]:
+    """根据文件名获取轨迹数据"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT trace_data, file_type, upload_time
+            FROM langgraph_traces 
+            WHERE file_name = %s
+            ORDER BY upload_time DESC
+            LIMIT 1;
+        """, (file_name,))
+        
+        result = cursor.fetchone()
+        if result:
+            trace_data, file_type, upload_time = result
+            return {
+                "trace": trace_data,
+                "file_type": file_type,
+                "upload_time": upload_time.isoformat() if upload_time else None
+            }
+        return None
+    except Exception as e:
+        logging.error(f"获取轨迹数据失败: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_all_traces() -> List[dict]:
+    """获取所有轨迹数据列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT file_name, file_type, upload_time, created_at
+            FROM langgraph_traces 
+            ORDER BY upload_time DESC;
+        """)
+        
+        results = []
+        for row in cursor.fetchall():
+            file_name, file_type, upload_time, created_at = row
+            results.append({
+                "file_name": file_name,
+                "file_type": file_type,
+                "upload_time": upload_time.isoformat() if upload_time else None,
+                "created_at": created_at.isoformat() if created_at else None
+            })
+        
+        return results
+    except Exception as e:
+        logging.error(f"获取轨迹列表失败: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_trace_data(file_name: str) -> bool:
+    """删除指定文件的轨迹数据"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DELETE FROM langgraph_traces WHERE file_name = %s;", (file_name,))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        
+        if deleted_count > 0:
+            logging.info(f"轨迹数据已删除: {file_name}")
+            return True
+        return False
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"删除轨迹数据失败: {e}")
         raise
     finally:
         cursor.close()

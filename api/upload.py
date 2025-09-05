@@ -1,10 +1,14 @@
 import io
+import json
+import logging
 from typing import List
+from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from PyPDF2 import PdfReader
 
 from core.vector_store import vector_store
+from config.database import save_trace_data, get_trace_data, get_all_traces, delete_trace_data
 
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -144,3 +148,115 @@ async def upload_docling(files: List[UploadFile] = File(...)):
             raise HTTPException(status_code=500, detail=f"Docling 解析或入库失败: {str(e)}")
 
     return {"added": total_added}
+
+
+@router.post("/langgraph")
+async def upload_langgraph(files: List[UploadFile] = File(...)):
+    """使用 LangGraph 处理文档上传，返回完整的执行轨迹"""
+    from core.langgraph_document_flow import process_document_with_trace
+    
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    results = []
+    for f in files:
+        data = await f.read()
+        name_lower = (f.filename or "").lower()
+        file_type = "unknown"
+        if name_lower.endswith(".pdf"):
+            file_type = "pdf"
+        elif name_lower.endswith((".docx", ".doc")):
+            file_type = "docx"
+        elif name_lower.endswith((".pptx", ".ppt")):
+            file_type = "pptx"
+        elif name_lower.endswith((".png", ".jpg", ".jpeg", ".tiff", ".bmp")):
+            file_type = "image"
+        elif name_lower.endswith((".html", ".htm")):
+            file_type = "html"
+        elif name_lower.endswith((".md", ".markdown")):
+            file_type = "markdown"
+        elif name_lower.endswith((".adoc", ".asciidoc")):
+            file_type = "asciidoc"
+        else:
+            file_type = "text"
+
+        try:
+            # 使用 LangGraph 处理文档
+            result = process_document_with_trace(
+                file_bytes=data,
+                filename=f.filename or "unknown",
+                file_type=file_type
+            )
+            
+            # 保存轨迹数据到数据库
+            if result["execution_trace"] and f.filename:
+                try:
+                    save_trace_data(f.filename, file_type, result["execution_trace"])
+                except Exception as e:
+                    logging.error(f"保存轨迹数据到数据库失败: {e}")
+                    # 继续处理，不中断上传流程
+            
+            results.append({
+                "filename": f.filename,
+                "success": result["success"],
+                "result": result["result"],
+                "execution_trace": result["execution_trace"]
+            })
+        except Exception as e:
+            results.append({
+                "filename": f.filename,
+                "success": False,
+                "result": None,
+                "execution_trace": {
+                    "total_steps": 0,
+                    "steps": [],
+                    "errors": [f"处理失败: {str(e)}"],
+                    "execution_time": ""
+                }
+            })
+
+    return {
+        "results": results,
+        "total_files": len(files),
+        "successful_files": sum(1 for r in results if r["success"])
+    }
+
+
+@router.get("/traces")
+async def get_traces():
+    """获取所有轨迹数据列表"""
+    try:
+        traces = get_all_traces()
+        return {"traces": traces}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取轨迹列表失败: {str(e)}")
+
+
+@router.get("/traces/{file_name}")
+async def get_trace(file_name: str):
+    """根据文件名获取轨迹数据"""
+    try:
+        trace_data = get_trace_data(file_name)
+        if trace_data:
+            return trace_data
+        else:
+            raise HTTPException(status_code=404, detail="轨迹数据不存在")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取轨迹数据失败: {str(e)}")
+
+
+@router.delete("/traces/{file_name}")
+async def delete_trace(file_name: str):
+    """删除指定文件的轨迹数据"""
+    try:
+        success = delete_trace_data(file_name)
+        if success:
+            return {"message": "轨迹数据已删除"}
+        else:
+            raise HTTPException(status_code=404, detail="轨迹数据不存在")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除轨迹数据失败: {str(e)}")

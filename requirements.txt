@@ -12,3 +12,4 @@ python-multipart
 psycopg2-binary
 pgvector
 docling
+langgraph

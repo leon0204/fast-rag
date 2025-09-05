@@ -23,7 +23,8 @@
 ![img_6.png](img_6.png)
 
 ## Features
-- Documents transform tools Docling、supprt PDF、DOCX、PPTX、Image、HTML、AsciiDoc、Markdown
+- Process management 【LangGraph】
+- Documents transform core tools 【Docling】、supprt PDF、DOCX、PPTX、Image、HTML、AsciiDoc、Markdown
 - Semantic search with pgvector (768-dim `nomic-embed-text`)
 - Streaming responses via SSE
 - Optional frontend: React + Vite + TypeScript

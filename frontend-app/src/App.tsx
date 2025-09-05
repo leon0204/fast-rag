@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import KnowledgeBase from './KnowledgeBase'
+import LangGraphTrace from './LangGraphTrace'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -29,6 +30,10 @@ export default function App() {
   const [currentModel, setCurrentModel] = useState('')
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [_modelSwitchMessage, setModelSwitchMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
+  
+  // LangGraph轨迹相关状态
+  const [langgraphTrace, setLanggraphTrace] = useState<any>(null)
+  const [traceStorage, setTraceStorage] = useState<Record<string, any>>({})
   
   // 模型配置
   const models = [
@@ -344,7 +349,7 @@ export default function App() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState<'chat'|'kb'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat'|'kb'|'langgraph'>('chat')
 
   const TopNav = () => (
     <div className="topnav">
@@ -367,7 +372,272 @@ export default function App() {
     return (
       <div className={`app full`}> 
         <TopNav />
-        <KnowledgeBase />
+        <KnowledgeBase 
+          onLanggraphTrace={(trace) => {
+            setLanggraphTrace(trace)
+            // 自动切换到LangGraph页面
+            setActiveTab('langgraph')
+          }}
+          onViewTrace={(filename, trace) => {
+            setLanggraphTrace(trace)
+            setActiveTab('langgraph')
+          }}
+          traceStorage={traceStorage}
+          setTraceStorage={setTraceStorage}
+        />
+      </div>
+    )
+  }
+
+  if (activeTab === 'langgraph') {
+    // 处理加载状态
+    if (langgraphTrace?.loading) {
+      return (
+        <div className={`app full`}> 
+          <TopNav />
+          <div style={{ padding: '20px' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              marginBottom: '20px',
+              gap: '12px'
+            }}>
+              <button 
+                onClick={() => setActiveTab('kb')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  backgroundColor: '#f8f9fa',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  color: '#495057',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#e9ecef'
+                  e.currentTarget.style.borderColor = '#adb5bd'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8f9fa'
+                  e.currentTarget.style.borderColor = '#dee2e6'
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>←</span>
+                <span>返回知识库</span>
+              </button>
+              <div style={{ 
+                height: '20px', 
+                width: '1px', 
+                backgroundColor: '#dee2e6' 
+              }} />
+              <h2 style={{ 
+                margin: 0, 
+                color: '#212529',
+                fontSize: '20px',
+                fontWeight: '600'
+              }}>
+                LangGraph Process
+              </h2>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              height: '50vh',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
+              <h3 style={{ margin: '0 0 10px 0', color: '#0369a1' }}>正在处理文件</h3>
+              <p style={{ margin: '0', color: '#6b7280' }}>{langgraphTrace.message || '请稍候...'}</p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+    
+    // 处理错误状态
+    if (langgraphTrace?.error) {
+      return (
+        <div className={`app full`}> 
+          <TopNav />
+          <div style={{ padding: '20px' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              marginBottom: '20px',
+              gap: '12px'
+            }}>
+              <button 
+                onClick={() => setActiveTab('kb')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  backgroundColor: '#f8f9fa',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  color: '#495057',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#e9ecef'
+                  e.currentTarget.style.borderColor = '#adb5bd'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8f9fa'
+                  e.currentTarget.style.borderColor = '#dee2e6'
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>←</span>
+                <span>返回知识库</span>
+              </button>
+              <div style={{ 
+                height: '20px', 
+                width: '1px', 
+                backgroundColor: '#dee2e6' 
+              }} />
+              <h2 style={{ 
+                margin: 0, 
+                color: '#212529',
+                fontSize: '20px',
+                fontWeight: '600'
+              }}>
+                LangGraph Process
+              </h2>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              height: '50vh',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>❌</div>
+              <h3 style={{ margin: '0 0 10px 0', color: '#dc2626' }}>处理失败</h3>
+              <p style={{ margin: '0', color: '#6b7280' }}>{langgraphTrace.message || '未知错误'}</p>
+              <button 
+                style={{
+                  marginTop: '20px',
+                  padding: '10px 20px',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setLanggraphTrace(null)}
+              >
+                返回知识库重新上传
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+    
+    // 使用真实的轨迹数据，如果没有则使用演示数据
+    const traceData = langgraphTrace || {
+      total_steps: 4,
+      steps: [
+        {
+          step: "convert_document",
+          status: "success" as const,
+          timestamp: new Date().toISOString(),
+          duration_ms: 1200,
+          input: { filename: "demo.pdf", file_type: "pdf" },
+          output: { text_length: 5000, preview: "This is a demo document..." }
+        },
+        {
+          step: "chunk_text",
+          status: "success" as const,
+          timestamp: new Date().toISOString(),
+          duration_ms: 800,
+          input: { text_length: 5000 },
+          output: { chunk_count: 8, chunk_preview: "This is the first chunk..." }
+        },
+        {
+          step: "generate_embeddings",
+          status: "success" as const,
+          timestamp: new Date().toISOString(),
+          duration_ms: 2000,
+          input: { chunk_count: 8 },
+          output: { embedding_count: 8, embedding_dim: 1536 }
+        },
+        {
+          step: "store_chunks",
+          status: "success" as const,
+          timestamp: new Date().toISOString(),
+          duration_ms: 500,
+          input: { chunk_count: 8 },
+          output: { stored_count: 8 }
+        }
+      ],
+      errors: [],
+      execution_time: new Date().toISOString()
+    };
+
+    return (
+      <div className={`app full`}> 
+        <TopNav />
+        <div style={{ padding: '20px' }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            marginBottom: '20px',
+            gap: '12px'
+          }}>
+            <button 
+              onClick={() => setActiveTab('kb')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                backgroundColor: '#f8f9fa',
+                border: '1px solid #dee2e6',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: '#495057',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#e9ecef'
+                e.currentTarget.style.borderColor = '#adb5bd'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#f8f9fa'
+                e.currentTarget.style.borderColor = '#dee2e6'
+              }}
+            >
+              <span style={{ fontSize: '16px' }}>←</span>
+              <span>返回知识库</span>
+            </button>
+            <div style={{ 
+              height: '20px', 
+              width: '1px', 
+              backgroundColor: '#dee2e6' 
+            }} />
+            <h2 style={{ 
+              margin: 0, 
+              color: '#212529',
+              fontSize: '20px',
+              fontWeight: '600'
+            }}>
+              LangGraph Process
+            </h2>
+          </div>
+          <LangGraphTrace trace={traceData} flowType="document" />
+        </div>
       </div>
     )
   }

@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from core.vector_store import vector_store
-from config.database import get_chunk_count, clear_all_chunks
+from config.database import get_chunk_count, clear_all_chunks, delete_trace_data
 from config.models import model_config
 from core.model_client import ModelClientFactory
 
@@ -38,12 +38,18 @@ async def get_stats() -> Dict:
 
 @router.delete("/files/{file_name}")
 async def delete_file(file_name: str) -> Dict:
-    """删除指定文件的所有文档块，返回删除数量"""
+    """删除指定文件的所有文档块和轨迹数据，返回删除数量"""
     try:
-        deleted_count = vector_store.delete_file_chunks(file_name)
+        # 删除向量数据
+        deleted_chunks = vector_store.delete_file_chunks(file_name)
+        
+        # 删除轨迹数据
+        trace_deleted = delete_trace_data(file_name)
+        
         return {
             "message": f"成功删除文件 {file_name}",
-            "deleted_chunks": deleted_count
+            "deleted_chunks": deleted_chunks,
+            "trace_deleted": trace_deleted
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")
