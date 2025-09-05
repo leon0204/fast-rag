@@ -18,3 +18,4 @@ env/
 # 其它
 *.log
 *.tmp
+/test
